@@ -218,6 +218,11 @@ def process_message(sender_number: str, text: str) -> str:
     hoje = datetime.now(TZ)
     dias = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
     sys = _load_policy(hoje.strftime("%Y-%m-%d"), dias[hoje.weekday()])
+    profs_ctx = "; ".join(f"{p['nome']}=id {p['id']}" for p in listar_profissionais())
+    sys += ("\n\n[Contexto técnico] Profissionais que você pode agendar e seus IDs: "
+            f"{profs_ctx}. Interprete datas no formato dia/mês (Brasil). Sempre chame "
+            "consultar_horarios com o id correto do profissional; nunca invente id, "
+            "data nem horário.")
 
     history = _load_history(sender_number)
     contents = []
@@ -242,6 +247,7 @@ def process_message(sender_number: str, text: str) -> str:
         for fc in calls:
             args = dict(fc.args) if fc.args else {}
             try:
+                print(f"[agent] tool={fc.name} args={args}", flush=True)
                 result = _DISPATCH[fc.name](args, sender_number)
             except Exception as e:  # noqa
                 result = {"erro": str(e)}
