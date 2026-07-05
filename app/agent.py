@@ -6,6 +6,8 @@ A sessão/estado da conversa é persistida em conversations.sessions para dar
 continuidade entre mensagens.
 """
 import json
+import os
+from pathlib import Path
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from .config import get_settings
@@ -29,6 +31,23 @@ profissional escolhida.
 os detalhes de pagamento. Não fale sobre QR Code nem porta (desativado nesta fase).
 - Se não houver horário, ofereça as próximas datas disponíveis.
 - Hoje é {hoje} ({dia_semana})."""
+
+
+# Política de conversa: arquivo versionado (editável), com override por variável de
+# ambiente (WA_SYSTEM_PROMPT) e fallback embutido no SYSTEM_PROMPT acima.
+_POLICY_FILE = Path(__file__).parent / "politica_atendente.md"
+
+
+def _load_policy(hoje_str: str, dia_semana: str) -> str:
+    override = os.getenv("WA_SYSTEM_PROMPT", "").strip()
+    if override:
+        base = override
+    else:
+        try:
+            base = _POLICY_FILE.read_text(encoding="utf-8")
+        except Exception:
+            base = SYSTEM_PROMPT.split("- Hoje é")[0]
+    return f"{base}\n\nContexto: hoje é {hoje_str} ({dia_semana})."
 
 
 # ---------------------------------------------------------------- ferramentas
@@ -198,7 +217,7 @@ def process_message(sender_number: str, text: str) -> str:
     client = genai.Client(api_key=_s.GEMINI_API_KEY)
     hoje = datetime.now(TZ)
     dias = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
-    sys = SYSTEM_PROMPT.format(hoje=hoje.strftime("%Y-%m-%d"), dia_semana=dias[hoje.weekday()])
+    sys = _load_policy(hoje.strftime("%Y-%m-%d"), dias[hoje.weekday()])
 
     history = _load_history(sender_number)
     contents = []
