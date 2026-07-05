@@ -1,0 +1,10 @@
+.env
+*.pyc
+__pycache__/
+venv/
+.venv/
+*.sql
+*.dump
+*.tar
+service-account*.json
+_writetest

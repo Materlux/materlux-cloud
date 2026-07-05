@@ -1,0 +1,41 @@
+# Deploy no Render (alternativas equivalentes: Railway, Fly.io, Google Cloud Run).
+# Sobe o app web + um cron diário de backup. O banco é externo (Supabase/Neon).
+services:
+  - type: web
+    name: materlux-api
+    runtime: python
+    plan: starter            # troque para "free" para testar sem custo
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: WA_PROVIDER
+        value: console
+      - key: WA_VERIFY_TOKEN
+        sync: false
+      - key: ZAPI_INSTANCE
+        sync: false
+      - key: ZAPI_TOKEN
+        sync: false
+      - key: ZAPI_CLIENT_TOKEN
+        sync: false
+
+  - type: cron
+    name: materlux-backup
+    runtime: python
+    schedule: "0 6 * * *"    # todo dia 06:00 UTC
+    buildCommand: pip install -r requirements.txt
+    startCommand: python backup_to_gcs.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GCS_BUCKET
+        value: postgres-materlux-backups
+      - key: BACKUP_ALERT_WEBHOOK
+        sync: false

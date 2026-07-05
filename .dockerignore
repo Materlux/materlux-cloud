@@ -1,0 +1,11 @@
+.git
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.sql
+*.dump
+service-account*.json
+frontend-recepcao/
+materlux_backend/

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Materlux</title>
+<style>
+  :root{--rose:#b76e79;--ink:#3a2c31;--bg:#f7f1ef;--line:#ece1df}
+  *{box-sizing:border-box;font-family:-apple-system,Segoe UI,Roboto,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--ink)}
+  header{background:#fff;border-bottom:1px solid var(--line);padding:12px 20px;display:flex;
+    align-items:center;gap:16px;position:sticky;top:0;z-index:5}
+  header h1{font-size:18px;margin:0;color:var(--rose)}
+  header .who{margin-left:auto;font-size:13px;color:#8a7a7e}
+  header a{color:#8a7a7e;font-size:13px;text-decoration:none;margin-left:14px;cursor:pointer}
+  nav{display:flex;gap:6px;padding:12px 20px 0}
+  nav button{border:0;background:transparent;padding:9px 15px;border-radius:9px 9px 0 0;
+    font-size:14px;cursor:pointer;color:#8a7a7e}
+  nav button.active{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 -2px 6px rgba(0,0,0,.03)}
+  main{padding:0 20px 40px}
+  .panel{background:#fff;border-radius:0 12px 12px 12px;padding:22px;min-height:60vh}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:18px}
+  label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:#6b585d}
+  input,select,textarea{padding:9px 10px;border:1px solid #e3d7d5;border-radius:8px;font-size:14px}
+  textarea{width:100%;min-height:120px;resize:vertical}
+  button.act{background:var(--rose);color:#fff;border:0;padding:10px 16px;border-radius:8px;
+    font-weight:600;cursor:pointer;font-size:14px}
+  button.ghost{background:#f2e9e7;color:var(--ink);border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
+  th{font-size:12px;color:#8a7a7e;text-transform:uppercase;letter-spacing:.03em}
+  .tag{font-size:11px;padding:2px 8px;border-radius:20px;background:#f2e9e7;color:#7a6a6e}
+  .tag.wa{background:#dcf5e3;color:#1e7d3c}
+  .muted{color:#8a7a7e;font-size:13px}
+  .evo{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .evo .d{font-size:12px;color:#8a7a7e;margin-bottom:6px}
+  .chat{border:1px solid var(--line);border-radius:10px;height:340px;overflow-y:auto;padding:12px;background:#fbf7f6}
+  .msg{margin:6px 0;padding:8px 12px;border-radius:12px;max-width:78%;font-size:14px;white-space:pre-wrap}
+  .msg.me{background:var(--rose);color:#fff;margin-left:auto}
+  .msg.bot{background:#fff;border:1px solid var(--line)}
+  .hide{display:none}
+</style></head>
+<body>
+<header>
+  <h1>Materlux</h1>
+  <span class="who" id="who"></span>
+  <a onclick="logout()">sair</a>
+</header>
+<nav>
+  <button data-tab="agenda" class="active" onclick="tab('agenda')">Agenda</button>
+  <button data-tab="novo" onclick="tab('novo')">Novo agendamento</button>
+  <button data-tab="pront" onclick="tab('pront')">Prontuário</button>
+  <button data-tab="wa" onclick="tab('wa')">Atendente virtual</button>
+</nav>
+<main>
+  <!-- AGENDA -->
+  <section id="agenda" class="panel">
+    <div class="row">
+      <div><label>Profissional</label><select id="ag-prof"></select></div>
+      <div><label>Data</label><input type="date" id="ag-date"></div>
+      <button class="act" onclick="loadAgenda()">Ver agenda</button>
+    </div>
+    <table><thead><tr><th>Hora</th><th>Paciente</th><th>Serviço</th><th>Status</th><th>Origem</th><th></th></tr></thead>
+      <tbody id="ag-body"></tbody></table>
+    <p class="muted" id="ag-empty"></p>
+  </section>
+
+  <!-- NOVO -->
+  <section id="novo" class="panel hide">
+    <div class="row">
+      <div><label>Profissional</label><select id="nv-prof" onchange="nvLoad()"></select></div>
+      <div><label>Serviço</label><select id="nv-serv"></select></div>
+      <div><label>Data</label><input type="date" id="nv-date" onchange="nvSlots()"></div>
+      <div><label>Horário</label><select id="nv-hora"></select></div>
+    </div>
+    <div class="row">
+      <div><label>Nome da paciente</label><input id="nv-nome" placeholder="Nome completo"></div>
+      <div><label>CPF</label><input id="nv-cpf"></div>
+      <div><label>WhatsApp</label><input id="nv-fone" placeholder="5527..."></div>
+      <button class="act" onclick="nvSave()">Agendar</button>
+    </div>
+    <p class="muted" id="nv-msg"></p>
+  </section>
+
+  <!-- PRONTUARIO -->
+  <section id="pront" class="panel hide">
+    <div class="row">
+      <div style="flex:1"><label>Buscar paciente (nome ou CPF)</label>
+        <input id="pr-q" style="width:100%" oninput="prSearch()"></div>
+    </div>
+    <div id="pr-results"></div>
+    <div id="pr-detail" class="hide">
+      <h3 id="pr-name"></h3>
+      <div id="pr-newbox" class="hide">
+        <label>Nova evolução clínica</label>
+        <textarea id="pr-anam" placeholder="Anamnese, exame, conduta..."></textarea>
+        <button class="act" style="margin-top:8px" onclick="prSave()">Salvar evolução</button>
+        <span class="muted" id="pr-msg"></span>
+      </div>
+      <h4 style="margin-top:22px">Histórico</h4>
+      <div id="pr-hist"></div>
+    </div>
+  </section>
+
+  <!-- WHATSAPP SIM -->
+  <section id="wa" class="panel hide">
+    <p class="muted">Simule uma conversa de paciente com a atendente virtual (não envia WhatsApp real).</p>
+    <div class="row"><div><label>Telefone simulado</label><input id="wa-phone" value="5527999990000"></div></div>
+    <div class="chat" id="wa-chat"></div>
+    <div class="row" style="margin-top:12px">
+      <input id="wa-in" style="flex:1" placeholder="Mensagem da paciente..." onkeydown="if(event.key==='Enter')waSend()">
+      <button class="act" onclick="waSend()">Enviar</button>
+    </div>
+  </section>
+</main>
+<script>
+let ME=null, PROFS=[], SELPAT=null;
+const $=id=>document.getElementById(id);
+const today=()=>new Date().toISOString().slice(0,10);
+
+async function boot(){
+  const r=await fetch('/api/me'); if(!r.ok){location.href='/login';return;}
+  ME=await r.json();
+  $('who').textContent=ME.name+' · '+(ME.role==='medico'?'Médico(a)':'Recepção');
+  PROFS=await (await fetch('/api/professionals')).json();
+  for(const s of ['ag-prof','nv-prof']){
+    $(s).innerHTML=PROFS.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
+  }
+  $('ag-date').value=today(); $('nv-date').value=today();
+  if(ME.professional_id) $('ag-prof').value=ME.professional_id;
+  loadAgenda(); nvLoad();
+}
+function tab(t){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
+  ['agenda','novo','pront','wa'].forEach(s=>$(s).classList.toggle('hide',s!==t));
+}
+async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/login';}
+
+async function loadAgenda(){
+  const pid=$('ag-prof').value, d=$('ag-date').value;
+  const rows=await (await fetch(`/api/appointments?data=${d}&professional_id=${pid}`)).json();
+  $('ag-empty').textContent=rows.length?'':'Nenhum agendamento nesta data.';
+  $('ag-body').innerHTML=rows.map(r=>`<tr>
+    <td>${r.hora}</td><td>${r.paciente}</td><td>${r.servico}</td>
+    <td>${r.status}</td><td><span class="tag ${r.origem==='whatsapp'?'wa':''}">${r.origem}</span></td>
+    <td><button class="ghost" onclick="cancelAppt(${r.id})">cancelar</button></td></tr>`).join('');
+}
+async function cancelAppt(id){
+  if(!confirm('Cancelar este agendamento?'))return;
+  await fetch(`/api/appointments/${id}/cancel`,{method:'POST'});loadAgenda();
+}
+
+async function nvLoad(){
+  const pid=$('nv-prof').value;
+  const s=await (await fetch(`/api/services?professional_id=${pid}`)).json();
+  $('nv-serv').innerHTML=s.map(x=>`<option value="${x.id}">${x.nome} — R$ ${x.preco.toFixed(2)}</option>`).join('');
+  nvSlots();
+}
+async function nvSlots(){
+  const pid=$('nv-prof').value,d=$('nv-date').value;
+  const j=await (await fetch(`/api/slots?professional_id=${pid}&data=${d}`)).json();
+  $('nv-hora').innerHTML=j.horarios.length
+    ? j.horarios.map(h=>`<option>${h}</option>`).join('')
+    : '<option value="">sem horários</option>';
+}
+async function nvSave(){
+  const b={professional_id:+$('nv-prof').value,service_id:+$('nv-serv').value,
+    data:$('nv-date').value,hora:$('nv-hora').value,
+    first_name:$('nv-nome').value.split(' ')[0],
+    last_name:$('nv-nome').value.split(' ').slice(1).join(' '),
+    cpf:$('nv-cpf').value,phone:$('nv-fone').value};
+  if(!b.hora){$('nv-msg').textContent='Escolha um horário.';return;}
+  const r=await fetch('/api/appointments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  $('nv-msg').textContent=r.ok?'✅ Agendado com sucesso!':'Erro: '+(await r.json()).detail;
+  if(r.ok){$('nv-nome').value=$('nv-cpf').value=$('nv-fone').value='';nvSlots();}
+}
+
+let prTimer;
+function prSearch(){clearTimeout(prTimer);prTimer=setTimeout(async()=>{
+  const q=$('pr-q').value.trim(); if(q.length<2){$('pr-results').innerHTML='';return;}
+  const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(q))).json();
+  $('pr-results').innerHTML=rows.map(r=>`<div class="evo" style="cursor:pointer"
+    onclick='openPat(${JSON.stringify(r)})'>${r.nome} <span class="muted">${r.cpf}</span></div>`).join('');
+},250);}
+async function openPat(p){
+  SELPAT=p;$('pr-results').innerHTML='';$('pr-detail').classList.remove('hide');
+  $('pr-name').textContent=p.nome+(p.cpf?'  ·  '+p.cpf:'');
+  $('pr-newbox').classList.toggle('hide',ME.role!=='medico');
+  const h=await (await fetch(`/api/patients/${p.id}/evolutions`)).json();
+  $('pr-hist').innerHTML=h.length?h.map(e=>`<div class="evo">
+    <div class="d">${e.data} · ${e.autor||'—'} <span class="tag">${e.origem}</span></div>
+    <div style="white-space:pre-wrap">${e.anamnese}</div></div>`).join('')
+    :'<p class="muted">Sem evoluções registradas.</p>';
+}
+async function prSave(){
+  const t=$('pr-anam').value.trim(); if(!t){return;}
+  const r=await fetch('/api/evolutions',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({patient_id:SELPAT.id,anamnese:t})});
+  if(r.ok){$('pr-anam').value='';$('pr-msg').textContent='✅ salvo';openPat(SELPAT);}
+  else{$('pr-msg').textContent='erro ao salvar';}
+}
+
+function addMsg(t,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=t;
+  $('wa-chat').appendChild(d);$('wa-chat').scrollTop=$('wa-chat').scrollHeight;}
+async function waSend(){
+  const t=$('wa-in').value.trim(); if(!t)return; $('wa-in').value='';addMsg(t,'me');
+  const r=await fetch('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({phone:$('wa-phone').value,message:t})});
+  const j=await r.json();addMsg(j.reply||'(sem resposta)','bot');
+}
+boot();
+</script>
+</body></html>
