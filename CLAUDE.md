@@ -128,6 +128,10 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
 ## Endpoints principais
 
 - `POST /login`, `POST /logout` · `GET /app` (SPA).
+- `GET /health` (rápido: banco) · `GET /health/deep` (banco + conexão Z-API +
+  config Gemini; devolve **503** em falha — é o alvo do Uptime Check do Cloud
+  Monitoring, a cada 5 min com alerta por e-mail). Checklist humano diário em
+  `CHECKLIST-ABERTURA.md`.
 - `GET /api/slots?professional_id=&service_id=&data=YYYY-MM-DD` → `{duracao_min, horarios[]}`.
 - `GET /api/appointments?professional_id=&data=` → agenda (inclui campos financeiros).
 - `POST /api/appointments` (cria; reusa paciente por CPF com `ON CONFLICT`).
