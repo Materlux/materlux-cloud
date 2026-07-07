@@ -11,7 +11,9 @@ TZ = ZoneInfo(get_settings().CLINIC_TZ)
 
 @router.get("/api/patients/search")
 def search(name: str, user: dict = Depends(current_user)):
-    cpf_digits = "".join(c for c in name if c.isdigit())
+    # só casa por CPF quando o termo tem dígitos; senão evita casar com
+    # registros de CPF vazio (None nunca satisfaz a igualdade)
+    cpf_digits = "".join(c for c in name if c.isdigit()) or None
     rows = db.query(
         "SELECT id, first_name, last_name, cpf, email FROM patients.records "
         "WHERE lower(first_name || ' ' || last_name) LIKE %s OR cpf = %s "
