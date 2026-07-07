@@ -1,12 +1,12 @@
-"""Cálculo de horários livres — usado tanto pela interface quanto pelo agente.
+"""Cálculo de horários livres — usado pela interface e pelo agente.
 
-Regras (herdadas do sistema antigo, corrigidas):
-- A grade vem de medical.professional_schedules (day_of_week no padrão Postgres DOW:
-  domingo=0 ... sábado=6).
-- Slots de SLOT_MINUTES minutos.
-- Um horário está ocupado se colide com um appointment cujo status NÃO é
-  cancelado/expirado (status_id in 1,2,6,7 contam como ocupando a agenda).
-- Bloqueios de medical.professional_timeoff removem faixas inteiras.
+Regras de slot (v2), derivadas de profissional + tipo de serviço:
+- Dra. Isadora (id 4): 60 min, ancorado na hora cheia (H:00).
+- Dr. Murilo (id 1):
+    - consulta (service_type_id = 1): 45 min, ancorado em H:00.
+    - US/retorno/procedimento (service_type_id 3 ou 4): 15 min, ancorado em H:45.
+Slots que colidem com agendamentos (status não cancelado/expirado) ou com bloqueios
+(professional_timeoff) são removidos; horários no passado também.
 """
 from datetime import datetime, timedelta, date, time
 from zoneinfo import ZoneInfo
@@ -16,8 +16,8 @@ from . import db
 _s = get_settings()
 TZ = ZoneInfo(_s.CLINIC_TZ)
 
-# status que NÃO ocupam a agenda (cancelados/expirados)
-_FREE_STATUS = (3, 4, 5)
+_FREE_STATUS = (3, 4, 5)  # cancelados/expirados não ocupam a agenda
+ISADORA_ID = 4
 
 
 def _pg_dow(d: date) -> int:
@@ -34,8 +34,44 @@ def professional_name(professional_id: int) -> str | None:
     return f"{(row['title'] or '').strip()} {row['full_name']}".strip()
 
 
-def available_slots(professional_id: int, target: date) -> list[str]:
-    """Retorna lista de horários 'HH:MM' livres para o profissional na data."""
+def _service_type(service_id) -> int | None:
+    if not service_id:
+        return None
+    row = db.query("SELECT service_type_id FROM medical.services WHERE id = %s",
+                   (service_id,), one=True)
+    return row["service_type_id"] if row else None
+
+
+def slot_rule(professional_id: int, service_id) -> tuple[int, int]:
+    """Retorna (duração_min, minuto_âncora) do slot para o profissional/serviço."""
+    if professional_id == ISADORA_ID:
+        return 60, 0
+    st = _service_type(service_id)
+    if st == 1:            # consulta
+        return 45, 0
+    return 15, 45          # US / retorno / procedimento (types 3 e 4)
+
+
+def slot_minutes(professional_id: int, service_id) -> int:
+    return slot_rule(professional_id, service_id)[0]
+
+
+def _candidate_starts(win_start: datetime, win_end: datetime,
+                      duration_min: int, anchor_min: int) -> list:
+    step = timedelta(hours=1)
+    dur = timedelta(minutes=duration_min)
+    cur = win_start.replace(minute=anchor_min, second=0, microsecond=0)
+    if cur < win_start:
+        cur += step
+    out = []
+    while cur + dur <= win_end:
+        out.append(cur)
+        cur += step
+    return out
+
+
+def available_slots(professional_id: int, service_id, target: date) -> list:
+    """Horários 'HH:MM' livres para o profissional/serviço na data."""
     dow = _pg_dow(target)
     windows = db.query(
         "SELECT start_time, end_time FROM medical.professional_schedules "
@@ -45,9 +81,11 @@ def available_slots(professional_id: int, target: date) -> list[str]:
     if not windows:
         return []
 
+    duration_min, anchor_min = slot_rule(professional_id, service_id)
+    dur = timedelta(minutes=duration_min)
+
     day_start = datetime.combine(target, time(0, 0), tzinfo=TZ)
     day_end = day_start + timedelta(days=1)
-
     booked = db.query(
         "SELECT start_time, end_time FROM medical.appointments "
         "WHERE professional_id = %s AND start_time >= %s AND start_time < %s "
@@ -59,36 +97,32 @@ def available_slots(professional_id: int, target: date) -> list[str]:
         "WHERE professional_id = %s AND start_timestamp < %s AND end_timestamp > %s",
         (professional_id, day_end, day_start),
     ) or []
-
     blocks = [(b["start_time"], b["end_time"]) for b in booked]
     blocks += [(t["start_timestamp"], t["end_timestamp"]) for t in timeoffs]
 
     now = datetime.now(TZ)
-    step = timedelta(minutes=_s.SLOT_MINUTES)
-    free: list[str] = []
-
+    free = []
     for w in windows:
-        cur = datetime.combine(target, w["start_time"], tzinfo=TZ)
-        win_end = datetime.combine(target, w["end_time"], tzinfo=TZ)
-        while cur + step <= win_end:
-            slot_end = cur + step
-            if cur <= now:  # não oferecer horário no passado
-                cur += step
+        w_start = datetime.combine(target, w["start_time"], tzinfo=TZ)
+        w_end = datetime.combine(target, w["end_time"], tzinfo=TZ)
+        for cur in _candidate_starts(w_start, w_end, duration_min, anchor_min):
+            slot_end = cur + dur
+            if cur <= now:
                 continue
-            overlap = any(cur < be and slot_end > bs for bs, be in blocks)
-            if not overlap:
-                free.append(cur.strftime("%H:%M"))
-            cur += step
-    return free
+            if any(cur < be and slot_end > bs for bs, be in blocks):
+                continue
+            free.append(cur.strftime("%H:%M"))
+
+    seen = set()
+    return [h for h in free if not (h in seen or seen.add(h))]
 
 
-def next_available_days(professional_id: int, from_date: date, days: int = 14,
-                        max_days_with_slots: int = 5) -> list[dict]:
-    """Varre os próximos dias e devolve os que têm horário livre."""
+def next_available_days(professional_id: int, service_id, from_date: date,
+                        days: int = 14, max_days_with_slots: int = 5) -> list:
     out = []
     for i in range(days):
         d = from_date + timedelta(days=i)
-        slots = available_slots(professional_id, d)
+        slots = available_slots(professional_id, service_id, d)
         if slots:
             out.append({"date": d.isoformat(), "slots": slots})
             if len(out) >= max_days_with_slots:

@@ -72,12 +72,12 @@ def listar_servicos(professional_id: int) -> list[dict]:
     return [{"service_id": r["id"], "nome": r["name"], "preco": float(r["price"])} for r in rows]
 
 
-def consultar_horarios(professional_id: int, data_iso: str) -> dict:
+def consultar_horarios(professional_id: int, service_id: int, data_iso: str) -> dict:
     d = date.fromisoformat(data_iso)
-    slots = scheduling.available_slots(professional_id, d)
+    slots = scheduling.available_slots(professional_id, service_id, d)
     if slots:
         return {"data": data_iso, "horarios": slots}
-    prox = scheduling.next_available_days(professional_id, d + timedelta(days=1))
+    prox = scheduling.next_available_days(professional_id, service_id, d + timedelta(days=1))
     return {"data": data_iso, "horarios": [], "proximas_datas": prox}
 
 
@@ -85,9 +85,9 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
                       data_iso: str, hora: str, nome_paciente: str) -> dict:
     start = datetime.fromisoformat(f"{data_iso}T{hora}:00").replace(tzinfo=TZ)
     # revalida que o horário ainda está livre (evita corrida)
-    if hora not in scheduling.available_slots(professional_id, start.date()):
+    if hora not in scheduling.available_slots(professional_id, service_id, start.date()):
         return {"ok": False, "motivo": "horario_indisponivel"}
-    end = start + timedelta(minutes=_s.SLOT_MINUTES)
+    end = start + timedelta(minutes=scheduling.slot_minutes(professional_id, service_id))
 
     patient_id = _get_or_create_patient(sender_number, nome_paciente)
     row = db.query(
@@ -105,13 +105,31 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
     }
 
 
+def _norm_name(s: str) -> str:
+    return " ".join((s or "").lower().split())
+
+
 def _get_or_create_patient(sender_number: str, nome: str) -> int:
-    contact = db.query(
-        "SELECT patient_id FROM patients.contacts WHERE phone_number = %s LIMIT 1",
-        (sender_number,), one=True,
+    """Encontra a paciente pelo telefone E pelo nome.
+
+    Um mesmo número de WhatsApp pode ser usado por mais de uma pessoa (mãe
+    agendando para a filha, número compartilhado, número de teste). Por isso só
+    reaproveitamos um cadastro existente quando o NOME também bate; caso
+    contrário criamos um cadastro novo vinculado ao mesmo telefone. Assim uma
+    reserva nunca cai na ficha de outra paciente só porque o número coincide.
+    """
+    nome_norm = _norm_name(nome)
+    existentes = db.query(
+        "SELECT p.id, p.first_name, p.last_name FROM patients.contacts c "
+        "JOIN patients.records p ON p.id = c.patient_id WHERE c.phone_number = %s",
+        (sender_number,),
     )
-    if contact:
-        return contact["patient_id"]
+    if nome_norm:
+        for r in existentes:
+            full = _norm_name(f"{r['first_name']} {r['last_name']}")
+            if full and (nome_norm == full or nome_norm in full or full in nome_norm):
+                return r["id"]
+
     partes = (nome or "Paciente WhatsApp").strip().split(" ", 1)
     first, last = partes[0], (partes[1] if len(partes) > 1 else "")
     pat = db.query(
@@ -119,8 +137,8 @@ def _get_or_create_patient(sender_number: str, nome: str) -> int:
         (first, last), one=True, commit=True,
     )
     db.query(
-        "INSERT INTO patients.contacts (patient_id, phone_number, is_primary) VALUES (%s, %s, true)",
-        (pat["id"], sender_number), commit=True,
+        "INSERT INTO patients.contacts (patient_id, phone_number, is_primary) VALUES (%s, %s, %s)",
+        (pat["id"], sender_number, len(existentes) == 0), commit=True,
     )
     return pat["id"]
 
@@ -177,10 +195,14 @@ def _build_tools():
         ),
         types.FunctionDeclaration(
             name="consultar_horarios",
-            description="Consulta horários livres de uma profissional em uma data (YYYY-MM-DD).",
+            description=("Consulta horários livres de uma profissional para um serviço "
+                         "específico em uma data (YYYY-MM-DD). A duração do horário varia "
+                         "conforme o profissional e o tipo de serviço."),
             parameters=types.Schema(type="OBJECT", properties={
                 "professional_id": types.Schema(type="INTEGER"),
-                "data_iso": types.Schema(type="STRING")}, required=["professional_id", "data_iso"]),
+                "service_id": types.Schema(type="INTEGER"),
+                "data_iso": types.Schema(type="STRING")},
+                required=["professional_id", "service_id", "data_iso"]),
         ),
         types.FunctionDeclaration(
             name="criar_agendamento",
@@ -199,7 +221,8 @@ def _build_tools():
 _DISPATCH = {
     "listar_profissionais": lambda a, s: listar_profissionais(),
     "listar_servicos": lambda a, s: listar_servicos(a["professional_id"]),
-    "consultar_horarios": lambda a, s: consultar_horarios(a["professional_id"], a["data_iso"]),
+    "consultar_horarios": lambda a, s: consultar_horarios(
+        a["professional_id"], a["service_id"], a["data_iso"]),
     "criar_agendamento": lambda a, s: criar_agendamento(
         s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"], a["nome_paciente"]),
 }

@@ -12,8 +12,8 @@
   header h1{font-size:18px;margin:0;color:var(--rose)}
   header .who{margin-left:auto;font-size:13px;color:#8a7a7e}
   header a{color:#8a7a7e;font-size:13px;text-decoration:none;margin-left:14px;cursor:pointer}
-  nav{display:flex;gap:6px;padding:12px 20px 0}
-  nav button{border:0;background:transparent;padding:9px 15px;border-radius:9px 9px 0 0;
+  nav{display:flex;gap:4px;padding:12px 20px 0;flex-wrap:wrap}
+  nav button{border:0;background:transparent;padding:9px 13px;border-radius:9px 9px 0 0;
     font-size:14px;cursor:pointer;color:#8a7a7e}
   nav button.active{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 -2px 6px rgba(0,0,0,.03)}
   main{padding:0 20px 40px}
@@ -24,20 +24,19 @@
   textarea{width:100%;min-height:120px;resize:vertical}
   button.act{background:var(--rose);color:#fff;border:0;padding:10px 16px;border-radius:8px;
     font-weight:600;cursor:pointer;font-size:14px}
-  button.ghost{background:#f2e9e7;color:var(--ink);border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
-  th{font-size:12px;color:#8a7a7e;text-transform:uppercase;letter-spacing:.03em}
+  button.ghost{background:#f2e9e7;color:var(--ink);border:0;padding:7px 11px;border-radius:8px;cursor:pointer;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 7px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{font-size:11px;color:#8a7a7e;text-transform:uppercase;letter-spacing:.03em}
+  td input,td select{padding:6px 7px;font-size:13px;max-width:150px}
   .tag{font-size:11px;padding:2px 8px;border-radius:20px;background:#f2e9e7;color:#7a6a6e}
   .tag.wa{background:#dcf5e3;color:#1e7d3c}
   .muted{color:#8a7a7e;font-size:13px}
   .evo{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
   .evo .d{font-size:12px;color:#8a7a7e;margin-bottom:6px}
-  .chat{border:1px solid var(--line);border-radius:10px;height:340px;overflow-y:auto;padding:12px;background:#fbf7f6}
-  .msg{margin:6px 0;padding:8px 12px;border-radius:12px;max-width:78%;font-size:14px;white-space:pre-wrap}
-  .msg.me{background:var(--rose);color:#fff;margin-left:auto}
-  .msg.bot{background:#fff;border:1px solid var(--line)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .hide{display:none}
+  .ok{color:#1e7d3c}.err{color:#c0392b}
 </style></head>
 <body>
 <header>
@@ -45,11 +44,14 @@
   <span class="who" id="who"></span>
   <a onclick="logout()">sair</a>
 </header>
-<nav>
+<nav id="nav">
   <button data-tab="agenda" class="active" onclick="tab('agenda')">Agenda</button>
   <button data-tab="novo" onclick="tab('novo')">Novo agendamento</button>
+  <button data-tab="cadastro" onclick="tab('cadastro')">Cadastro</button>
+  <button data-tab="historico" onclick="tab('historico')">Histórico</button>
+  <button data-tab="editar" onclick="tab('editar')">Editar agendamentos</button>
   <button data-tab="pront" onclick="tab('pront')">Prontuário</button>
-  <button data-tab="wa" onclick="tab('wa')">Atendente virtual</button>
+  <button data-tab="relatorios" onclick="tab('relatorios')">Relatórios</button>
 </nav>
 <main>
   <!-- AGENDA -->
@@ -59,7 +61,9 @@
       <div><label>Data</label><input type="date" id="ag-date"></div>
       <button class="act" onclick="loadAgenda()">Ver agenda</button>
     </div>
-    <table><thead><tr><th>Hora</th><th>Paciente</th><th>Serviço</th><th>Status</th><th>Origem</th><th></th></tr></thead>
+    <table><thead><tr>
+      <th>Hora</th><th>Paciente</th><th>Serviço</th><th>Status</th><th>Origem</th>
+      <th>Forma pgto</th><th>Valor</th><th>Observações</th><th></th></tr></thead>
       <tbody id="ag-body"></tbody></table>
     <p class="muted" id="ag-empty"></p>
   </section>
@@ -67,26 +71,82 @@
   <!-- NOVO -->
   <section id="novo" class="panel hide">
     <div class="row">
-      <div><label>Profissional</label><select id="nv-prof" onchange="nvLoad()"></select></div>
-      <div><label>Serviço</label><select id="nv-serv"></select></div>
+      <div style="flex:1"><label>Paciente (buscar por nome ou CPF — deixe vazio para cadastrar na hora)</label>
+        <input id="nv-busca" style="width:100%" placeholder="Nome ou CPF" oninput="nvSearch()"></div>
+    </div>
+    <div id="nv-results"></div>
+    <div id="nv-selected" class="muted" style="margin-bottom:12px"></div>
+    <div class="row">
+      <div><label>Profissional</label><select id="nv-prof" onchange="nvServices()"></select></div>
+      <div><label>Serviço</label><select id="nv-serv" onchange="nvSlots()"></select></div>
       <div><label>Data</label><input type="date" id="nv-date" onchange="nvSlots()"></div>
       <div><label>Horário</label><select id="nv-hora"></select></div>
     </div>
-    <div class="row">
+    <div class="row" id="nv-newfields">
       <div><label>Nome da paciente</label><input id="nv-nome" placeholder="Nome completo"></div>
       <div><label>CPF</label><input id="nv-cpf"></div>
       <div><label>WhatsApp</label><input id="nv-fone" placeholder="5527..."></div>
-      <button class="act" onclick="nvSave()">Agendar</button>
     </div>
-    <p class="muted" id="nv-msg"></p>
+    <button class="act" onclick="nvSave()">Agendar</button>
+    <span class="muted" id="nv-msg"></span>
+  </section>
+
+  <!-- CADASTRO -->
+  <section id="cadastro" class="panel hide">
+    <h3>Cadastro de paciente</h3>
+    <p class="muted">Todos os campos são obrigatórios (necessários para nota fiscal).</p>
+    <div class="grid2">
+      <div><label>Nome completo *</label><input id="cd-nome" style="width:100%"></div>
+      <div><label>E-mail *</label><input id="cd-email" type="email" style="width:100%"></div>
+      <div><label>Telefone *</label><input id="cd-fone" style="width:100%" placeholder="27999999999"></div>
+      <div><label>CPF *</label><input id="cd-cpf" style="width:100%"></div>
+      <div><label>Data de nascimento *</label><input id="cd-nasc" type="date" style="width:100%"></div>
+      <div><label>CEP *</label><input id="cd-cep" style="width:100%" placeholder="29000000" onblur="buscaCep()"></div>
+      <div><label>Rua</label><input id="cd-rua" style="width:100%"></div>
+      <div><label>Bairro</label><input id="cd-bairro" style="width:100%"></div>
+      <div><label>Cidade</label><input id="cd-cidade" style="width:100%"></div>
+      <div><label>Estado</label><input id="cd-uf" style="width:100%"></div>
+      <div><label>Número *</label><input id="cd-num" style="width:100%"></div>
+      <div><label>Complemento</label><input id="cd-compl" style="width:100%"></div>
+    </div>
+    <button class="act" style="margin-top:16px" onclick="cdSave()">Cadastrar paciente</button>
+    <span class="muted" id="cd-msg"></span>
+  </section>
+
+  <!-- HISTORICO -->
+  <section id="historico" class="panel hide">
+    <div class="row"><div style="flex:1"><label>Buscar paciente (nome ou CPF)</label>
+      <input id="hi-q" style="width:100%" oninput="hiSearch()"></div></div>
+    <div id="hi-results"></div>
+    <h4 id="hi-name" class="hide"></h4>
+    <table id="hi-table" class="hide"><thead><tr><th>Data</th><th>Procedimento</th>
+      <th>Profissional</th><th>Status</th></tr></thead><tbody id="hi-body"></tbody></table>
+    <p class="muted" id="hi-empty"></p>
+  </section>
+
+  <!-- EDITAR -->
+  <section id="editar" class="panel hide">
+    <div class="row"><div style="flex:1"><label>Buscar paciente (nome ou CPF)</label>
+      <input id="ed-q" style="width:100%" oninput="edSearch()"></div></div>
+    <div id="ed-results"></div>
+    <div id="ed-list"></div>
+    <div id="ed-form" class="hide">
+      <h4>Remarcar</h4>
+      <div class="row">
+        <div><label>Profissional</label><select id="ed-prof" onchange="edServices()"></select></div>
+        <div><label>Serviço</label><select id="ed-serv" onchange="edSlots()"></select></div>
+        <div><label>Data</label><input type="date" id="ed-date" onchange="edSlots()"></div>
+        <div><label>Horário</label><select id="ed-hora"></select></div>
+        <button class="act" onclick="edSaveResched()">Salvar remarcação</button>
+      </div>
+      <span class="muted" id="ed-msg"></span>
+    </div>
   </section>
 
   <!-- PRONTUARIO -->
   <section id="pront" class="panel hide">
-    <div class="row">
-      <div style="flex:1"><label>Buscar paciente (nome ou CPF)</label>
-        <input id="pr-q" style="width:100%" oninput="prSearch()"></div>
-    </div>
+    <div class="row"><div style="flex:1"><label>Buscar paciente (nome ou CPF)</label>
+      <input id="pr-q" style="width:100%" oninput="prSearch()"></div></div>
     <div id="pr-results"></div>
     <div id="pr-detail" class="hide">
       <h3 id="pr-name"></h3>
@@ -96,84 +156,212 @@
         <button class="act" style="margin-top:8px" onclick="prSave()">Salvar evolução</button>
         <span class="muted" id="pr-msg"></span>
       </div>
-      <h4 style="margin-top:22px">Histórico</h4>
+      <h4 style="margin-top:22px">Histórico clínico</h4>
       <div id="pr-hist"></div>
     </div>
   </section>
 
-  <!-- WHATSAPP SIM -->
-  <section id="wa" class="panel hide">
-    <p class="muted">Simule uma conversa de paciente com a atendente virtual (não envia WhatsApp real).</p>
-    <div class="row"><div><label>Telefone simulado</label><input id="wa-phone" value="5527999990000"></div></div>
-    <div class="chat" id="wa-chat"></div>
-    <div class="row" style="margin-top:12px">
-      <input id="wa-in" style="flex:1" placeholder="Mensagem da paciente..." onkeydown="if(event.key==='Enter')waSend()">
-      <button class="act" onclick="waSend()">Enviar</button>
+  <!-- RELATORIOS -->
+  <section id="relatorios" class="panel hide">
+    <h3>Relatório de valores recebidos por profissional</h3>
+    <div class="row">
+      <div><label>De</label><input type="date" id="rp-start"></div>
+      <div><label>Até</label><input type="date" id="rp-end"></div>
+      <div><label>Forma de pagamento</label><select id="rp-forma"><option value="">Todas</option></select></div>
+      <button class="act" onclick="rpRun()">Gerar relatório</button>
     </div>
+    <table><thead><tr><th>Profissional</th><th>Atendimentos</th><th>Total recebido</th></tr></thead>
+      <tbody id="rp-body"></tbody></table>
+    <h3 id="rp-total" style="margin-top:16px"></h3>
   </section>
 </main>
 <script>
-let ME=null, PROFS=[], SELPAT=null;
+let ME=null, PROFS=[], SERVICES={}, SELPAT=null, NVPAT=null, EDPAT=null, EDAPPT=null;
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().slice(0,10);
+const money=v=>v==null?'':('R$ '+Number(v).toFixed(2));
 
 async function boot(){
   const r=await fetch('/api/me'); if(!r.ok){location.href='/login';return;}
   ME=await r.json();
   $('who').textContent=ME.name+' · '+(ME.role==='medico'?'Médico(a)':'Recepção');
   PROFS=await (await fetch('/api/professionals')).json();
-  for(const s of ['ag-prof','nv-prof']){
-    $(s).innerHTML=PROFS.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
-  }
-  $('ag-date').value=today(); $('nv-date').value=today();
+  const opts=PROFS.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
+  ['ag-prof','nv-prof','ed-prof'].forEach(s=>$(s).innerHTML=opts);
+  ['ag-date','nv-date','ed-date'].forEach(s=>$(s).value=today());
+  $('rp-start').value=today(); $('rp-end').value=today();
   if(ME.professional_id) $('ag-prof').value=ME.professional_id;
-  loadAgenda(); nvLoad();
+  loadAgenda(); nvServices(); rpFormas();
 }
 function tab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
-  ['agenda','novo','pront','wa'].forEach(s=>$(s).classList.toggle('hide',s!==t));
+  ['agenda','novo','cadastro','historico','editar','pront','relatorios']
+    .forEach(s=>$(s).classList.toggle('hide',s!==t));
 }
 async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/login';}
+async function getServices(pid){
+  if(!SERVICES[pid]) SERVICES[pid]=await (await fetch('/api/services?professional_id='+pid)).json();
+  return SERVICES[pid];
+}
+function fillServiceSelect(sel,list){
+  sel.innerHTML=list.map(x=>`<option value="${x.id}">${x.nome} — R$ ${x.preco.toFixed(2)}</option>`).join('');
+}
 
+/* ---------- AGENDA ---------- */
 async function loadAgenda(){
   const pid=$('ag-prof').value, d=$('ag-date').value;
   const rows=await (await fetch(`/api/appointments?data=${d}&professional_id=${pid}`)).json();
   $('ag-empty').textContent=rows.length?'':'Nenhum agendamento nesta data.';
+  const formas=['','dinheiro','PIX','cartão débito','cartão crédito','transferência'];
   $('ag-body').innerHTML=rows.map(r=>`<tr>
-    <td>${r.hora}</td><td>${r.paciente}</td><td>${r.servico}</td>
-    <td>${r.status}</td><td><span class="tag ${r.origem==='whatsapp'?'wa':''}">${r.origem}</span></td>
-    <td><button class="ghost" onclick="cancelAppt(${r.id})">cancelar</button></td></tr>`).join('');
+    <td>${r.hora}</td><td>${r.paciente}</td><td>${r.servico}</td><td>${r.status}</td>
+    <td><span class="tag ${r.origem==='whatsapp'?'wa':''}">${r.origem}</span></td>
+    <td><select id="f-${r.id}">${formas.map(f=>`<option ${f===r.forma_pagamento?'selected':''}>${f}</option>`).join('')}</select></td>
+    <td><input id="v-${r.id}" style="width:90px" value="${r.valor_pago!=null?r.valor_pago:''}" placeholder="0.00"></td>
+    <td><input id="o-${r.id}" value="${(r.observacoes||'').replace(/"/g,'&quot;')}"></td>
+    <td><button class="ghost" onclick="saveFin(${r.id})">salvar</button>
+        <button class="ghost" onclick="cancelAppt(${r.id})">cancelar</button></td></tr>`).join('');
+}
+async function saveFin(id){
+  const b={forma_pagamento:$('f-'+id).value||null,
+    valor_pago:$('v-'+id).value?parseFloat($('v-'+id).value):null,
+    observacoes:$('o-'+id).value};
+  const r=await fetch(`/api/appointments/${id}/financeiro`,{method:'PATCH',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  const btn=event.target; btn.textContent=r.ok?'✓ salvo':'erro'; setTimeout(()=>btn.textContent='salvar',1500);
 }
 async function cancelAppt(id){
   if(!confirm('Cancelar este agendamento?'))return;
   await fetch(`/api/appointments/${id}/cancel`,{method:'POST'});loadAgenda();
 }
 
-async function nvLoad(){
-  const pid=$('nv-prof').value;
-  const s=await (await fetch(`/api/services?professional_id=${pid}`)).json();
-  $('nv-serv').innerHTML=s.map(x=>`<option value="${x.id}">${x.nome} — R$ ${x.preco.toFixed(2)}</option>`).join('');
-  nvSlots();
+/* ---------- NOVO AGENDAMENTO ---------- */
+let nvTimer;
+function nvSearch(){clearTimeout(nvTimer);nvTimer=setTimeout(async()=>{
+  const q=$('nv-busca').value.trim();
+  if(q.length<2){$('nv-results').innerHTML='';return;}
+  const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(q))).json();
+  $('nv-results').innerHTML=rows.map(p=>`<div class="evo" style="cursor:pointer"
+    onclick='nvPick(${JSON.stringify(p)})'>${p.nome} <span class="muted">${p.cpf}</span></div>`).join('');
+},250);}
+function nvPick(p){
+  NVPAT=p; $('nv-results').innerHTML='';
+  $('nv-selected').innerHTML=`Paciente selecionada: <b>${p.nome}</b> ${p.cpf} — <a onclick="nvClear()" style="cursor:pointer;color:var(--rose)">trocar</a>`;
+  $('nv-newfields').classList.add('hide');
+}
+function nvClear(){NVPAT=null;$('nv-selected').innerHTML='';$('nv-newfields').classList.remove('hide');}
+async function nvServices(){
+  const list=await getServices($('nv-prof').value); fillServiceSelect($('nv-serv'),list); nvSlots();
 }
 async function nvSlots(){
-  const pid=$('nv-prof').value,d=$('nv-date').value;
-  const j=await (await fetch(`/api/slots?professional_id=${pid}&data=${d}`)).json();
+  const pid=$('nv-prof').value,sid=$('nv-serv').value,d=$('nv-date').value;
+  if(!sid){$('nv-hora').innerHTML='<option value="">escolha o serviço</option>';return;}
+  const j=await (await fetch(`/api/slots?professional_id=${pid}&service_id=${sid}&data=${d}`)).json();
   $('nv-hora').innerHTML=j.horarios.length
     ? j.horarios.map(h=>`<option>${h}</option>`).join('')
     : '<option value="">sem horários</option>';
 }
 async function nvSave(){
   const b={professional_id:+$('nv-prof').value,service_id:+$('nv-serv').value,
-    data:$('nv-date').value,hora:$('nv-hora').value,
-    first_name:$('nv-nome').value.split(' ')[0],
-    last_name:$('nv-nome').value.split(' ').slice(1).join(' '),
-    cpf:$('nv-cpf').value,phone:$('nv-fone').value};
+    data:$('nv-date').value,hora:$('nv-hora').value};
   if(!b.hora){$('nv-msg').textContent='Escolha um horário.';return;}
+  if(NVPAT){b.patient_id=NVPAT.id;}
+  else{
+    b.first_name=$('nv-nome').value.split(' ')[0];
+    b.last_name=$('nv-nome').value.split(' ').slice(1).join(' ');
+    b.cpf=$('nv-cpf').value; b.phone=$('nv-fone').value;
+  }
   const r=await fetch('/api/appointments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
   $('nv-msg').textContent=r.ok?'✅ Agendado com sucesso!':'Erro: '+(await r.json()).detail;
-  if(r.ok){$('nv-nome').value=$('nv-cpf').value=$('nv-fone').value='';nvSlots();}
+  if(r.ok){$('nv-nome').value=$('nv-cpf').value=$('nv-fone').value='';nvClear();$('nv-busca').value='';nvSlots();}
 }
 
+/* ---------- CADASTRO ---------- */
+async function buscaCep(){
+  const cep=$('cd-cep').value.replace(/\D/g,''); if(cep.length!==8)return;
+  try{const j=await (await fetch(`https://viacep.com.br/ws/${cep}/json/`)).json();
+    if(j.erro){$('cd-msg').textContent='CEP não encontrado';return;}
+    $('cd-rua').value=j.logradouro||''; $('cd-bairro').value=j.bairro||'';
+    $('cd-cidade').value=j.localidade||''; $('cd-uf').value=j.uf||''; $('cd-msg').textContent='';
+    $('cd-num').focus();
+  }catch(e){$('cd-msg').textContent='Falha ao consultar CEP';}
+}
+async function cdSave(){
+  const b={nome:$('cd-nome').value,email:$('cd-email').value,telefone:$('cd-fone').value,
+    cpf:$('cd-cpf').value,birth_date:$('cd-nasc').value,cep:$('cd-cep').value,
+    address_street:$('cd-rua').value,address_neighbourhood:$('cd-bairro').value,
+    address_city:$('cd-cidade').value,address_state:$('cd-uf').value,
+    address_number:$('cd-num').value,address_complement:$('cd-compl').value};
+  const r=await fetch('/api/patients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  const m=$('cd-msg');
+  if(r.ok){m.textContent='✅ Paciente cadastrada!';m.className='muted ok';
+    ['cd-nome','cd-email','cd-fone','cd-cpf','cd-nasc','cd-cep','cd-rua','cd-bairro','cd-cidade','cd-uf','cd-num','cd-compl'].forEach(i=>$(i).value='');}
+  else{m.textContent='Erro: '+(await r.json()).detail;m.className='muted err';}
+}
+
+/* ---------- HISTORICO ---------- */
+let hiTimer;
+function hiSearch(){clearTimeout(hiTimer);hiTimer=setTimeout(async()=>{
+  const q=$('hi-q').value.trim(); if(q.length<2){$('hi-results').innerHTML='';return;}
+  const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(q))).json();
+  $('hi-results').innerHTML=rows.map(p=>`<div class="evo" style="cursor:pointer"
+    onclick='hiOpen(${JSON.stringify(p)})'>${p.nome} <span class="muted">${p.cpf}</span></div>`).join('');
+},250);}
+async function hiOpen(p){
+  $('hi-results').innerHTML=''; $('hi-name').textContent=p.nome; $('hi-name').classList.remove('hide');
+  const rows=await (await fetch(`/api/patients/${p.id}/appointments`)).json();
+  $('hi-empty').textContent=rows.length?'':'Sem agendamentos.';
+  $('hi-table').classList.toggle('hide',!rows.length);
+  $('hi-body').innerHTML=rows.map(a=>`<tr><td>${a.data}</td><td>${a.servico}</td>
+    <td>${a.profissional}</td><td>${a.status}</td></tr>`).join('');
+}
+
+/* ---------- EDITAR ---------- */
+let edTimer;
+function edSearch(){clearTimeout(edTimer);edTimer=setTimeout(async()=>{
+  const q=$('ed-q').value.trim(); if(q.length<2){$('ed-results').innerHTML='';return;}
+  const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(q))).json();
+  $('ed-results').innerHTML=rows.map(p=>`<div class="evo" style="cursor:pointer"
+    onclick='edOpen(${JSON.stringify(p)})'>${p.nome} <span class="muted">${p.cpf}</span></div>`).join('');
+},250);}
+async function edOpen(p){
+  EDPAT=p; $('ed-results').innerHTML=''; $('ed-form').classList.add('hide');
+  const rows=await (await fetch(`/api/patients/${p.id}/appointments`)).json();
+  $('ed-list').innerHTML='<h4>'+p.nome+'</h4>'+(rows.length?rows.map(a=>`<div class="evo">
+    ${a.data} · ${a.servico} · ${a.profissional} <span class="tag">${a.status}</span>
+    <button class="ghost" onclick="edResched(${a.id})">remarcar</button>
+    <button class="ghost" onclick="edCancel(${a.id})">cancelar</button></div>`).join('')
+    :'<p class="muted">Sem agendamentos.</p>');
+}
+async function edCancel(id){if(!confirm('Cancelar?'))return;
+  await fetch(`/api/appointments/${id}/cancel`,{method:'POST'});edOpen(EDPAT);}
+async function edResched(id){
+  EDAPPT=id; const a=await (await fetch('/api/appointments/'+id)).json();
+  $('ed-form').classList.remove('hide');
+  $('ed-prof').value=a.professional_id; await edServices();
+  if(a.service_id)$('ed-serv').value=a.service_id;
+  $('ed-date').value=a.data; await edSlots();
+  $('ed-form').scrollIntoView();
+}
+async function edServices(){const list=await getServices($('ed-prof').value);fillServiceSelect($('ed-serv'),list);edSlots();}
+async function edSlots(){
+  const pid=$('ed-prof').value,sid=$('ed-serv').value,d=$('ed-date').value;
+  if(!sid){$('ed-hora').innerHTML='';return;}
+  const j=await (await fetch(`/api/slots?professional_id=${pid}&service_id=${sid}&data=${d}`)).json();
+  $('ed-hora').innerHTML=j.horarios.length?j.horarios.map(h=>`<option>${h}</option>`).join('')
+    :'<option value="">sem horários</option>';
+}
+async function edSaveResched(){
+  const b={professional_id:+$('ed-prof').value,service_id:+$('ed-serv').value,
+    data:$('ed-date').value,hora:$('ed-hora').value};
+  if(!b.hora){$('ed-msg').textContent='Escolha um horário.';return;}
+  const r=await fetch('/api/appointments/'+EDAPPT,{method:'PUT',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  $('ed-msg').textContent=r.ok?'✅ Remarcado!':'Erro: '+(await r.json()).detail;
+  if(r.ok){$('ed-form').classList.add('hide');edOpen(EDPAT);}
+}
+
+/* ---------- PRONTUARIO ---------- */
 let prTimer;
 function prSearch(){clearTimeout(prTimer);prTimer=setTimeout(async()=>{
   const q=$('pr-q').value.trim(); if(q.length<2){$('pr-results').innerHTML='';return;}
@@ -199,13 +387,18 @@ async function prSave(){
   else{$('pr-msg').textContent='erro ao salvar';}
 }
 
-function addMsg(t,cls){const d=document.createElement('div');d.className='msg '+cls;d.textContent=t;
-  $('wa-chat').appendChild(d);$('wa-chat').scrollTop=$('wa-chat').scrollHeight;}
-async function waSend(){
-  const t=$('wa-in').value.trim(); if(!t)return; $('wa-in').value='';addMsg(t,'me');
-  const r=await fetch('/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({phone:$('wa-phone').value,message:t})});
-  const j=await r.json();addMsg(j.reply||'(sem resposta)','bot');
+/* ---------- RELATORIOS ---------- */
+function rpFormas(){
+  const formas=['dinheiro','PIX','cartão débito','cartão crédito','transferência'];
+  $('rp-forma').innerHTML='<option value="">Todas</option>'+formas.map(f=>`<option>${f}</option>`).join('');
+}
+async function rpRun(){
+  const p=new URLSearchParams({start:$('rp-start').value,end:$('rp-end').value});
+  if($('rp-forma').value)p.append('forma_pagamento',$('rp-forma').value);
+  const j=await (await fetch('/api/reports/revenue?'+p.toString())).json();
+  $('rp-body').innerHTML=j.por_profissional.map(r=>`<tr><td>${r.profissional}</td>
+    <td>${r.qtd}</td><td>${money(r.total)}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">Sem lançamentos no período.</td></tr>';
+  $('rp-total').textContent='Total geral: '+money(j.total_geral);
 }
 boot();
 </script>

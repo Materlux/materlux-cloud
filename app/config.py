@@ -34,6 +34,10 @@ class Settings:
         int(x) for x in os.getenv("BOOKABLE_PROFESSIONAL_IDS", "1,4").split(",")
     ]
 
+    # Formas de pagamento aceitas (lançadas pela secretária na agenda)
+    PAYMENT_METHODS = ["dinheiro", "PIX", "cartão débito", "cartão crédito",
+                       "transferência"]
+
 
 @lru_cache
 def get_settings() -> Settings:
