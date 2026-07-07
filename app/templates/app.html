@@ -101,7 +101,7 @@
       <div><label>Telefone *</label><input id="cd-fone" style="width:100%" placeholder="27999999999"></div>
       <div><label>CPF *</label><input id="cd-cpf" style="width:100%"></div>
       <div><label>Data de nascimento *</label><input id="cd-nasc" type="text" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:100%"></div>
-      <div><label>CEP *</label><input id="cd-cep" style="width:100%" placeholder="29000000" onblur="buscaCep()"></div>
+      <div><label>CEP *</label><input id="cd-cep" style="width:100%" placeholder="29000-000" maxlength="9" inputmode="numeric" oninput="maskCep(this)" onblur="buscaCep()"></div>
       <div><label>Rua</label><input id="cd-rua" style="width:100%"></div>
       <div><label>Bairro</label><input id="cd-bairro" style="width:100%"></div>
       <div><label>Cidade</label><input id="cd-cidade" style="width:100%"></div>
@@ -290,14 +290,24 @@ async function nvSave(){
 }
 
 /* ---------- CADASTRO ---------- */
+let cepBuscado='';
+function maskCep(el){
+  let v=el.value.replace(/\D/g,'').slice(0,8);
+  el.value=v.length>5?v.slice(0,5)+'-'+v.slice(5):v;
+  if(v.length===8)buscaCep();
+}
 async function buscaCep(){
-  const cep=$('cd-cep').value.replace(/\D/g,''); if(cep.length!==8)return;
+  const cep=$('cd-cep').value.replace(/\D/g,'');
+  if(cep.length!==8||cep===cepBuscado)return;
+  cepBuscado=cep;
+  const m=$('cd-msg'); m.textContent='Buscando endereço...'; m.className='muted';
   try{const j=await (await fetch(`https://viacep.com.br/ws/${cep}/json/`)).json();
-    if(j.erro){$('cd-msg').textContent='CEP não encontrado';return;}
+    if(j.erro){m.textContent='CEP não encontrado — preencha o endereço manualmente';m.className='muted err';return;}
     $('cd-rua').value=j.logradouro||''; $('cd-bairro').value=j.bairro||'';
-    $('cd-cidade').value=j.localidade||''; $('cd-uf').value=j.uf||''; $('cd-msg').textContent='';
+    $('cd-cidade').value=j.localidade||''; $('cd-uf').value=j.uf||'';
+    m.textContent='✓ Endereço preenchido — confira e informe o número'; m.className='muted ok';
     $('cd-num').focus();
-  }catch(e){$('cd-msg').textContent='Falha ao consultar CEP';}
+  }catch(e){m.textContent='Falha ao consultar o CEP — preencha manualmente';m.className='muted err';cepBuscado='';}
 }
 async function cdSave(){
   if($('cd-nasc').value&&!brToIso($('cd-nasc').value)){
@@ -310,7 +320,8 @@ async function cdSave(){
   const r=await fetch('/api/patients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
   const m=$('cd-msg');
   if(r.ok){m.textContent='✅ Paciente cadastrada!';m.className='muted ok';
-    ['cd-nome','cd-email','cd-fone','cd-cpf','cd-nasc','cd-cep','cd-rua','cd-bairro','cd-cidade','cd-uf','cd-num','cd-compl'].forEach(i=>$(i).value='');}
+    ['cd-nome','cd-email','cd-fone','cd-cpf','cd-nasc','cd-cep','cd-rua','cd-bairro','cd-cidade','cd-uf','cd-num','cd-compl'].forEach(i=>$(i).value='');
+    cepBuscado='';}
   else{m.textContent='Erro: '+(await r.json()).detail;m.className='muted err';}
 }
 
