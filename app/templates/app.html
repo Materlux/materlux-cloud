@@ -58,7 +58,7 @@
   <section id="agenda" class="panel">
     <div class="row">
       <div><label>Profissional</label><select id="ag-prof"></select></div>
-      <div><label>Data</label><input type="date" id="ag-date"></div>
+      <div><label>Data</label><input type="text" id="ag-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
       <button class="act" onclick="loadAgenda()">Ver agenda</button>
     </div>
     <table><thead><tr>
@@ -79,7 +79,7 @@
     <div class="row">
       <div><label>Profissional</label><select id="nv-prof" onchange="nvServices()"></select></div>
       <div><label>Serviço</label><select id="nv-serv" onchange="nvSlots()"></select></div>
-      <div><label>Data</label><input type="date" id="nv-date" onchange="nvSlots()"></div>
+      <div><label>Data</label><input type="text" id="nv-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this,nvSlots)" style="width:110px"></div>
       <div><label>Horário</label><select id="nv-hora"></select></div>
     </div>
     <div class="row" id="nv-newfields">
@@ -100,7 +100,7 @@
       <div><label>E-mail *</label><input id="cd-email" type="email" style="width:100%"></div>
       <div><label>Telefone *</label><input id="cd-fone" style="width:100%" placeholder="27999999999"></div>
       <div><label>CPF *</label><input id="cd-cpf" style="width:100%"></div>
-      <div><label>Data de nascimento *</label><input id="cd-nasc" type="date" style="width:100%"></div>
+      <div><label>Data de nascimento *</label><input id="cd-nasc" type="text" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:100%"></div>
       <div><label>CEP *</label><input id="cd-cep" style="width:100%" placeholder="29000000" onblur="buscaCep()"></div>
       <div><label>Rua</label><input id="cd-rua" style="width:100%"></div>
       <div><label>Bairro</label><input id="cd-bairro" style="width:100%"></div>
@@ -135,7 +135,7 @@
       <div class="row">
         <div><label>Profissional</label><select id="ed-prof" onchange="edServices()"></select></div>
         <div><label>Serviço</label><select id="ed-serv" onchange="edSlots()"></select></div>
-        <div><label>Data</label><input type="date" id="ed-date" onchange="edSlots()"></div>
+        <div><label>Data</label><input type="text" id="ed-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this,edSlots)" style="width:110px"></div>
         <div><label>Horário</label><select id="ed-hora"></select></div>
         <button class="act" onclick="edSaveResched()">Salvar remarcação</button>
       </div>
@@ -165,8 +165,8 @@
   <section id="relatorios" class="panel hide">
     <h3>Relatório de valores recebidos por profissional</h3>
     <div class="row">
-      <div><label>De</label><input type="date" id="rp-start"></div>
-      <div><label>Até</label><input type="date" id="rp-end"></div>
+      <div><label>De</label><input type="text" id="rp-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div><label>Até</label><input type="text" id="rp-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
       <div><label>Forma de pagamento</label><select id="rp-forma"><option value="">Todas</option></select></div>
       <button class="act" onclick="rpRun()">Gerar relatório</button>
     </div>
@@ -178,7 +178,17 @@
 <script>
 let ME=null, PROFS=[], SERVICES={}, SELPAT=null, NVPAT=null, EDPAT=null, EDAPPT=null;
 const $=id=>document.getElementById(id);
-const today=()=>new Date().toISOString().slice(0,10);
+const todayBr=()=>{const d=new Date();
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();};
+const brToIso=s=>{const m=(s||'').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);return m?`${m[3]}-${m[2]}-${m[1]}`:null;};
+const isoToBr=s=>{const m=(s||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[3]}/${m[2]}/${m[1]}`:(s||'');};
+function maskDate(el,cb){
+  let v=el.value.replace(/\D/g,'').slice(0,8);
+  if(v.length>4)v=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
+  else if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);
+  el.value=v;
+  if(cb&&v.length===10)cb();
+}
 const money=v=>v==null?'':('R$ '+Number(v).toFixed(2));
 
 async function boot(){
@@ -188,8 +198,8 @@ async function boot(){
   PROFS=await (await fetch('/api/professionals')).json();
   const opts=PROFS.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
   ['ag-prof','nv-prof','ed-prof'].forEach(s=>$(s).innerHTML=opts);
-  ['ag-date','nv-date','ed-date'].forEach(s=>$(s).value=today());
-  $('rp-start').value=today(); $('rp-end').value=today();
+  ['ag-date','nv-date','ed-date'].forEach(s=>$(s).value=todayBr());
+  $('rp-start').value=todayBr(); $('rp-end').value=todayBr();
   if(ME.professional_id) $('ag-prof').value=ME.professional_id;
   loadAgenda(); nvServices(); rpFormas();
 }
@@ -209,7 +219,8 @@ function fillServiceSelect(sel,list){
 
 /* ---------- AGENDA ---------- */
 async function loadAgenda(){
-  const pid=$('ag-prof').value, d=$('ag-date').value;
+  const pid=$('ag-prof').value, d=brToIso($('ag-date').value);
+  if(!d){$('ag-empty').textContent='Data inválida — use dd/mm/aaaa.';$('ag-body').innerHTML='';return;}
   const rows=await (await fetch(`/api/appointments?data=${d}&professional_id=${pid}`)).json();
   $('ag-empty').textContent=rows.length?'':'Nenhum agendamento nesta data.';
   const formas=['','dinheiro','PIX','cartão débito','cartão crédito','transferência'];
@@ -254,8 +265,9 @@ async function nvServices(){
   const list=await getServices($('nv-prof').value); fillServiceSelect($('nv-serv'),list); nvSlots();
 }
 async function nvSlots(){
-  const pid=$('nv-prof').value,sid=$('nv-serv').value,d=$('nv-date').value;
+  const pid=$('nv-prof').value,sid=$('nv-serv').value,d=brToIso($('nv-date').value);
   if(!sid){$('nv-hora').innerHTML='<option value="">escolha o serviço</option>';return;}
+  if(!d){$('nv-hora').innerHTML='<option value="">data inválida</option>';return;}
   const j=await (await fetch(`/api/slots?professional_id=${pid}&service_id=${sid}&data=${d}`)).json();
   $('nv-hora').innerHTML=j.horarios.length
     ? j.horarios.map(h=>`<option>${h}</option>`).join('')
@@ -263,7 +275,8 @@ async function nvSlots(){
 }
 async function nvSave(){
   const b={professional_id:+$('nv-prof').value,service_id:+$('nv-serv').value,
-    data:$('nv-date').value,hora:$('nv-hora').value};
+    data:brToIso($('nv-date').value),hora:$('nv-hora').value};
+  if(!b.data){$('nv-msg').textContent='Data inválida — use dd/mm/aaaa.';return;}
   if(!b.hora){$('nv-msg').textContent='Escolha um horário.';return;}
   if(NVPAT){b.patient_id=NVPAT.id;}
   else{
@@ -287,8 +300,10 @@ async function buscaCep(){
   }catch(e){$('cd-msg').textContent='Falha ao consultar CEP';}
 }
 async function cdSave(){
+  if($('cd-nasc').value&&!brToIso($('cd-nasc').value)){
+    $('cd-msg').textContent='Data de nascimento inválida — use dd/mm/aaaa.';$('cd-msg').className='muted err';return;}
   const b={nome:$('cd-nome').value,email:$('cd-email').value,telefone:$('cd-fone').value,
-    cpf:$('cd-cpf').value,birth_date:$('cd-nasc').value,cep:$('cd-cep').value,
+    cpf:$('cd-cpf').value,birth_date:brToIso($('cd-nasc').value)||'',cep:$('cd-cep').value,
     address_street:$('cd-rua').value,address_neighbourhood:$('cd-bairro').value,
     address_city:$('cd-cidade').value,address_state:$('cd-uf').value,
     address_number:$('cd-num').value,address_complement:$('cd-compl').value};
@@ -340,20 +355,21 @@ async function edResched(id){
   $('ed-form').classList.remove('hide');
   $('ed-prof').value=a.professional_id; await edServices();
   if(a.service_id)$('ed-serv').value=a.service_id;
-  $('ed-date').value=a.data; await edSlots();
+  $('ed-date').value=isoToBr(a.data); await edSlots();
   $('ed-form').scrollIntoView();
 }
 async function edServices(){const list=await getServices($('ed-prof').value);fillServiceSelect($('ed-serv'),list);edSlots();}
 async function edSlots(){
-  const pid=$('ed-prof').value,sid=$('ed-serv').value,d=$('ed-date').value;
-  if(!sid){$('ed-hora').innerHTML='';return;}
+  const pid=$('ed-prof').value,sid=$('ed-serv').value,d=brToIso($('ed-date').value);
+  if(!sid||!d){$('ed-hora').innerHTML='';return;}
   const j=await (await fetch(`/api/slots?professional_id=${pid}&service_id=${sid}&data=${d}`)).json();
   $('ed-hora').innerHTML=j.horarios.length?j.horarios.map(h=>`<option>${h}</option>`).join('')
     :'<option value="">sem horários</option>';
 }
 async function edSaveResched(){
   const b={professional_id:+$('ed-prof').value,service_id:+$('ed-serv').value,
-    data:$('ed-date').value,hora:$('ed-hora').value};
+    data:brToIso($('ed-date').value),hora:$('ed-hora').value};
+  if(!b.data){$('ed-msg').textContent='Data inválida — use dd/mm/aaaa.';return;}
   if(!b.hora){$('ed-msg').textContent='Escolha um horário.';return;}
   const r=await fetch('/api/appointments/'+EDAPPT,{method:'PUT',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
@@ -393,7 +409,9 @@ function rpFormas(){
   $('rp-forma').innerHTML='<option value="">Todas</option>'+formas.map(f=>`<option>${f}</option>`).join('');
 }
 async function rpRun(){
-  const p=new URLSearchParams({start:$('rp-start').value,end:$('rp-end').value});
+  const ini=brToIso($('rp-start').value),fim=brToIso($('rp-end').value);
+  if(!ini||!fim){$('rp-total').textContent='Datas inválidas — use dd/mm/aaaa.';$('rp-body').innerHTML='';return;}
+  const p=new URLSearchParams({start:ini,end:fim});
   if($('rp-forma').value)p.append('forma_pagamento',$('rp-forma').value);
   const j=await (await fetch('/api/reports/revenue?'+p.toString())).json();
   $('rp-body').innerHTML=j.por_profissional.map(r=>`<tr><td>${r.profissional}</td>
