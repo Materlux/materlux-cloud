@@ -7,6 +7,7 @@ continuidade entre mensagens.
 """
 import json
 import os
+import unicodedata
 from pathlib import Path
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -109,14 +110,13 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
                             "service_id retornado.")}
     # trava contra id trocado dentro da lista certa: o nome que o modelo diz estar
     # agendando tem que conferir com o nome real do service_id informado
-    nome_norm, real_norm = _norm_name(nome_servico), _norm_name(svc["name"])
-    if not nome_norm or (nome_norm != real_norm
-                         and nome_norm not in real_norm and real_norm not in nome_norm):
+    if not _servico_confere(nome_servico, svc["name"]):
         return {"ok": False, "motivo": "servico_nao_confere",
                 "detalhe": (f"O service_id {service_id} corresponde a "
                             f"'{svc['name']}', não a '{nome_servico or '(vazio)'}'. "
-                            "Confira na lista de listar_servicos o id do serviço "
-                            "que a paciente pediu e tente de novo.")}
+                            "Localize na lista de listar_servicos o id do serviço "
+                            "que a paciente pediu e chame criar_agendamento de novo "
+                            "AGORA, nesta mesma resposta.")}
     start = datetime.fromisoformat(f"{data_iso}T{hora}:00").replace(tzinfo=TZ)
     # revalida que o horário ainda está livre (evita corrida)
     if hora not in scheduling.available_slots(professional_id, service_id, start.date()):
@@ -202,6 +202,30 @@ def cancelar_agendamento(sender_number: str, appointment_id: int, motivo: str) -
 
 def _norm_name(s: str) -> str:
     return " ".join((s or "").lower().split())
+
+
+_STOPWORDS = {"de", "da", "do", "das", "dos", "e", "a", "o", "para", "com"}
+
+
+def _tokens(s: str) -> set[str]:
+    """Palavras significativas, sem acentos/pontuação — p/ comparar nomes de serviço."""
+    s = unicodedata.normalize("NFD", (s or "").lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    for p in ".-/()":
+        s = s.replace(p, " ")
+    return {t for t in s.split() if t and t not in _STOPWORDS}
+
+
+def _servico_confere(informado: str, real: str) -> bool:
+    ti, tr = _tokens(informado), _tokens(real)
+    if not ti:
+        return False
+    if ti == tr:
+        return True
+    if "on" in (ti ^ tr):
+        # 'On' distingue teleatendimento de presencial — aí só vale nome exato
+        return False
+    return ti <= tr or tr <= ti
 
 
 def _get_or_create_patient(sender_number: str, nome: str, cpf: str) -> int:
@@ -464,7 +488,12 @@ def process_message(sender_number: str, text: str) -> str:
             "cancelar_agendamento) e ela responde ok=true. Nunca afirme à paciente "
             "que algo foi agendado ou cancelado sem ter feito a chamada e recebido "
             "ok=true nesta conversa; se a ferramenta recusar, diga o que faltou e "
-            "resolva antes de confirmar.")
+            "resolva antes de confirmar. Você só consegue agir DURANTE a geração da "
+            "resposta atual: se precisar consultar ou corrigir algo, chame a "
+            "ferramenta imediatamente, antes de escrever a resposta final. NUNCA "
+            "termine dizendo 'aguarde um momento' ou prometendo que vai fazer algo "
+            "em seguida — não existe 'em seguida'; faça agora ou peça a informação "
+            "que falta à paciente.")
 
     history = _load_history(sender_number)
     contents = []
