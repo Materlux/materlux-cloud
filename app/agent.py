@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from .config import get_settings
+from .validators import valida_cpf as _valida_cpf
 from . import db, scheduling
 
 _s = get_settings()
@@ -113,21 +114,6 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
 
 def _norm_name(s: str) -> str:
     return " ".join((s or "").lower().split())
-
-
-def _valida_cpf(cpf: str) -> str | None:
-    """Valida o CPF (11 dígitos + dígitos verificadores).
-
-    Devolve o CPF normalizado (só dígitos) se for válido; senão None.
-    """
-    digits = "".join(c for c in (cpf or "") if c.isdigit())
-    if len(digits) != 11 or digits == digits[0] * 11:
-        return None
-    for i in (9, 10):
-        soma = sum(int(digits[j]) * ((i + 1) - j) for j in range(i))
-        if (soma * 10) % 11 % 10 != int(digits[i]):
-            return None
-    return digits
 
 
 def _get_or_create_patient(sender_number: str, nome: str, cpf: str) -> int:

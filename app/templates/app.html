@@ -95,7 +95,10 @@
 
   <!-- CADASTRO -->
   <section id="cadastro" class="panel hide">
-    <h3>Cadastro de paciente</h3>
+    <div class="row"><div style="flex:1"><label>Buscar paciente já cadastrada (para editar ou excluir)</label>
+      <input id="cd-q" style="width:100%" placeholder="Nome ou CPF" oninput="cdSearch()"></div></div>
+    <div id="cd-found"></div>
+    <h3 id="cd-title">Cadastro de paciente</h3>
     <p class="muted">Todos os campos são obrigatórios (necessários para nota fiscal).</p>
     <div class="grid2">
       <div><label>Nome completo *</label><input id="cd-nome" style="width:100%" oninput="cdCheckDup()"></div>
@@ -112,7 +115,8 @@
       <div><label>Complemento</label><input id="cd-compl" style="width:100%"></div>
     </div>
     <div id="cd-dup" class="alerta hide"></div>
-    <button class="act" style="margin-top:16px" onclick="cdSave()">Cadastrar paciente</button>
+    <button class="act" style="margin-top:16px" id="cd-save" onclick="cdSave()">Cadastrar paciente</button>
+    <button class="ghost hide" id="cd-cancel" onclick="cdReset()">cancelar edição</button>
     <span class="muted" id="cd-msg"></span>
   </section>
 
@@ -293,7 +297,58 @@ async function nvSave(){
 }
 
 /* ---------- CADASTRO ---------- */
-let cepBuscado='', cdTimer2;
+let cepBuscado='', cdTimer2, CDPAT=null, CDROWS={}, cdQTimer;
+function cdSearch(){clearTimeout(cdQTimer);cdQTimer=setTimeout(async()=>{
+  const q=$('cd-q').value.trim(); if(q.length<2){$('cd-found').innerHTML='';return;}
+  const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(q))).json();
+  CDROWS={}; rows.forEach(p=>CDROWS[p.id]=p);
+  $('cd-found').innerHTML=rows.map(p=>`<div class="evo">${p.nome}
+    <span class="muted">${p.cpf?'CPF '+p.cpf:'sem CPF'}</span>
+    <button class="ghost" onclick="cdEdit(${p.id})">editar</button>
+    <button class="ghost" onclick="cdDelete(${p.id})">excluir</button></div>`).join('')
+    ||'<p class="muted">Nenhuma paciente encontrada.</p>';
+},250);}
+async function cdEdit(id){
+  const r=await fetch('/api/patients/'+id);
+  if(!r.ok){$('cd-msg').textContent='Erro ao carregar cadastro';$('cd-msg').className='muted err';return;}
+  const p=await r.json();
+  CDPAT=id;
+  $('cd-nome').value=p.nome; $('cd-email').value=p.email; $('cd-fone').value=p.telefone;
+  $('cd-cpf').value=p.cpf; maskCpf($('cd-cpf'));
+  $('cd-nasc').value=isoToBr(p.birth_date);
+  cepBuscado=p.cep; $('cd-cep').value=p.cep; if(p.cep)maskCep($('cd-cep'));
+  $('cd-rua').value=p.address_street; $('cd-bairro').value=p.address_neighbourhood;
+  $('cd-cidade').value=p.address_city; $('cd-uf').value=p.address_state;
+  $('cd-num').value=p.address_number; $('cd-compl').value=p.address_complement;
+  $('cd-title').textContent='Editando cadastro: '+p.nome;
+  $('cd-save').textContent='Salvar alterações';
+  $('cd-cancel').classList.remove('hide');
+  $('cd-found').innerHTML=''; $('cd-q').value='';
+  $('cd-msg').textContent='';
+  $('cd-title').scrollIntoView();
+}
+async function cdDelete(id){
+  const p=CDROWS[id]||{};
+  if(!confirm(`Excluir DEFINITIVAMENTE o cadastro de ${p.nome||'esta paciente'}?\nEsta ação não pode ser desfeita.`))return;
+  const r=await fetch('/api/patients/'+id,{method:'DELETE'});
+  if(r.ok){
+    $('cd-found').innerHTML=`<p class="muted ok">✅ Cadastro de ${p.nome||''} excluído.</p>`;
+    if(CDPAT===id)cdReset();
+  }else{
+    const j=await r.json();
+    $('cd-found').innerHTML=`<div class="alerta">⚠️ ${j.detail}</div>`;
+  }
+}
+function cdReset(){
+  CDPAT=null;
+  ['cd-nome','cd-email','cd-fone','cd-cpf','cd-nasc','cd-cep','cd-rua','cd-bairro','cd-cidade','cd-uf','cd-num','cd-compl'].forEach(i=>$(i).value='');
+  cepBuscado=''; clearTimeout(cdTimer2);
+  $('cd-dup').classList.add('hide'); $('cd-dup').innerHTML='';
+  $('cd-title').textContent='Cadastro de paciente';
+  $('cd-save').textContent='Cadastrar paciente';
+  $('cd-cancel').classList.add('hide');
+  $('cd-msg').textContent='';
+}
 function maskCpf(el){
   const v=el.value.replace(/\D/g,'').slice(0,11);
   el.value=v.length>9?v.slice(0,3)+'.'+v.slice(3,6)+'.'+v.slice(6,9)+'-'+v.slice(9)
@@ -307,11 +362,12 @@ function cdCheckDup(){clearTimeout(cdTimer2);cdTimer2=setTimeout(async()=>{
   try{
     if(cpf.length===11){
       const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(cpf))).json();
-      const hit=rows.find(p=>p.cpf===cpf);
+      const hit=rows.find(p=>p.cpf===cpf&&p.id!==CDPAT);
       if(hit)avisos.push(`⚠️ <b>CPF já cadastrado</b> para a paciente <b>${hit.nome}</b>. O sistema não deixará salvar de novo — confira na aba Histórico/Prontuário.`);
     }
     if(nome.length>=3){
-      const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(nome))).json();
+      const rows=(await (await fetch('/api/patients/search?name='+encodeURIComponent(nome))).json())
+        .filter(p=>p.id!==CDPAT);
       if(rows.length)avisos.push('⚠️ Já existe cadastro com nome parecido: '
         +rows.slice(0,5).map(p=>`<b>${p.nome}</b>${p.cpf?' — CPF '+p.cpf:' — sem CPF'}`).join(' · ')
         +(rows.length>5?` (e mais ${rows.length-5})`:'' )
@@ -348,11 +404,12 @@ async function cdSave(){
     address_street:$('cd-rua').value,address_neighbourhood:$('cd-bairro').value,
     address_city:$('cd-cidade').value,address_state:$('cd-uf').value,
     address_number:$('cd-num').value,address_complement:$('cd-compl').value};
-  const r=await fetch('/api/patients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  const editando=CDPAT;
+  const r=await fetch(editando?'/api/patients/'+editando:'/api/patients',
+    {method:editando?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
   const m=$('cd-msg');
-  if(r.ok){m.textContent='✅ Paciente cadastrada!';m.className='muted ok';
-    ['cd-nome','cd-email','cd-fone','cd-cpf','cd-nasc','cd-cep','cd-rua','cd-bairro','cd-cidade','cd-uf','cd-num','cd-compl'].forEach(i=>$(i).value='');
-    cepBuscado=''; clearTimeout(cdTimer2); $('cd-dup').classList.add('hide'); $('cd-dup').innerHTML='';}
+  if(r.ok){cdReset();
+    m.textContent=editando?'✅ Cadastro atualizado!':'✅ Paciente cadastrada!';m.className='muted ok';}
   else{m.textContent='Erro: '+(await r.json()).detail;m.className='muted err';}
 }
 
