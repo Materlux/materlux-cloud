@@ -52,6 +52,7 @@
   <button data-tab="cadastro" onclick="tab('cadastro')">Cadastro</button>
   <button data-tab="historico" onclick="tab('historico')">Histórico</button>
   <button data-tab="editar" onclick="tab('editar')">Editar agendamentos</button>
+  <button data-tab="cancelamentos" onclick="tab('cancelamentos')">Cancelamentos</button>
   <button data-tab="pront" onclick="tab('pront')">Prontuário</button>
   <button data-tab="relatorios" onclick="tab('relatorios')">Relatórios</button>
 </nav>
@@ -150,6 +151,23 @@
     </div>
   </section>
 
+  <!-- CANCELAMENTOS -->
+  <section id="cancelamentos" class="panel hide">
+    <h3>Cancelamentos e expirados</h3>
+    <p class="muted">Agendamentos que saíram da agenda principal: cancelados pela paciente,
+      cancelados pela clínica e expirados.</p>
+    <div class="row">
+      <div><label>Profissional</label><select id="cx-prof"></select></div>
+      <div><label>De</label><input type="text" id="cx-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div><label>Até</label><input type="text" id="cx-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <button class="act" onclick="loadCancel()">Buscar</button>
+    </div>
+    <table><thead><tr><th>Data</th><th>Hora</th><th>Paciente</th><th>Profissional</th>
+      <th>Serviço</th><th>Status</th><th>Origem</th></tr></thead>
+      <tbody id="cx-body"></tbody></table>
+    <p class="muted" id="cx-empty"></p>
+  </section>
+
   <!-- PRONTUARIO -->
   <section id="pront" class="panel hide">
     <div class="row"><div style="flex:1"><label>Buscar paciente (nome ou CPF)</label>
@@ -205,14 +223,16 @@ async function boot(){
   PROFS=await (await fetch('/api/professionals')).json();
   const opts=PROFS.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
   ['ag-prof','nv-prof','ed-prof'].forEach(s=>$(s).innerHTML=opts);
+  $('cx-prof').innerHTML='<option value="">Todas</option>'+opts;
   ['ag-date','nv-date','ed-date'].forEach(s=>$(s).value=todayBr());
   $('rp-start').value=todayBr(); $('rp-end').value=todayBr();
+  $('cx-start').value=todayBr(); $('cx-end').value=todayBr();
   if(ME.professional_id) $('ag-prof').value=ME.professional_id;
   loadAgenda(); nvServices(); rpFormas();
 }
 function tab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
-  ['agenda','novo','cadastro','historico','editar','pront','relatorios']
+  ['agenda','novo','cadastro','historico','editar','cancelamentos','pront','relatorios']
     .forEach(s=>$(s).classList.toggle('hide',s!==t));
 }
 async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/login';}
@@ -251,6 +271,22 @@ async function saveFin(id){
 async function cancelAppt(id){
   if(!confirm('Cancelar este agendamento?'))return;
   await fetch(`/api/appointments/${id}/cancel`,{method:'POST'});loadAgenda();
+}
+
+/* ---------- CANCELAMENTOS ---------- */
+const CXSTATUS={cancelled_by_patient:'cancelada pela paciente',
+  cancelled_by_clinic:'cancelada pela clínica',expired:'expirado'};
+async function loadCancel(){
+  const ini=brToIso($('cx-start').value), fim=brToIso($('cx-end').value);
+  if(!ini||!fim){$('cx-empty').textContent='Datas inválidas — use dd/mm/aaaa.';$('cx-body').innerHTML='';return;}
+  const p=new URLSearchParams({data:ini,data_fim:fim,cancelados:'true'});
+  if($('cx-prof').value)p.append('professional_id',$('cx-prof').value);
+  const rows=await (await fetch('/api/appointments?'+p.toString())).json();
+  $('cx-empty').textContent=rows.length?'':'Nenhum cancelamento no período.';
+  $('cx-body').innerHTML=rows.map(r=>`<tr>
+    <td>${r.data}</td><td>${r.hora}</td><td>${r.paciente}</td><td>${r.profissional}</td>
+    <td>${r.servico}</td><td>${CXSTATUS[r.status]||r.status}</td>
+    <td><span class="tag ${r.origem==='whatsapp'?'wa':''}">${r.origem}</span></td></tr>`).join('');
 }
 
 /* ---------- NOVO AGENDAMENTO ---------- */

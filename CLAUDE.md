@@ -146,19 +146,29 @@ foi removida na v2.)
 
 ## Estado atual e pendências
 
-**Publicado (v2 completo, commit `3e99e1a`):** os 7 requisitos da v2 (slots por
-procedimento, cadastro, histórico, editar, financeiro na agenda, relatórios) + a correção do
-casamento de paciente do agente. Todos verificados em produção.
+**Publicado:** v2 completa (`3e99e1a`) + melhorias pós-v2 até o commit `bd3d5f5`:
+datas em dd/mm/aaaa no frontend (campos com máscara; conversão `brToIso`/`isoToBr`),
+CEP com máscara e busca automática de endereço (ViaCEP), agente WhatsApp exige/valida/
+grava CPF antes de agendar, aviso em tempo real de paciente duplicada no Cadastro
+(nome/CPF), editar/excluir cadastro de paciente (`GET/PUT/DELETE /api/patients/{id}`)
+e validação de CPF com dígitos verificadores unificada em `app/validators.py`
+(usada pelo agente e pelo `POST`/`PUT` de pacientes).
 
-**Pendências (NÃO commitadas — há um diff local não publicado):**
-1. `app/routers/patients.py` → `search`: ajuste de 1 linha (`cpf_digits = ... or None`) para
-   **não** trazer pacientes de CPF vazio ao buscar por nome. **Já editado localmente, falta
-   commit + deploy.**
-2. **Limpeza de dados de teste** (fazer no Cloud SQL Studio quando o usuário autorizar):
-   - Cadastros duplicados da Suhelen: `patients.records` ids **158** e **290** (mesmo
-     telefone `5527998833450`).
-   - Agendamento `medical.appointments` id **652** (10/07 09:30, WhatsApp) gravado na ficha
-     errada "Daniele Scherrer" (id 183), status 4. Era de teste, número `5527988838365`.
+**Regras novas que valem lembrar:**
+- Exclusão de paciente é **bloqueada** (409) se houver agendamentos ou evoluções
+  clínicas na ficha — nesses casos o caminho é editar (ou Cloud SQL Studio).
+- No `PUT /api/patients/{id}` só **nome e CPF válido** são obrigatórios (cadastros
+  antigos restaurados não têm e-mail/nascimento/endereço); no `POST` todos os campos
+  continuam obrigatórios.
+
+**Pendências (limpeza de dados de teste, quando o usuário fizer):**
+1. Cadastros duplicados da Suhelen: `patients.records` ids **158** e **290** (mesmo
+   telefone `5527998833450`) — dá para resolver pela própria aba Cadastro (buscar →
+   excluir a ficha sem agendamentos); se ambas tiverem histórico, Cloud SQL Studio.
+2. Ficha "Daniele Scherrer" (id **183**) com CPF **08554809718** vinculado
+   incorretamente — corrigir pela edição na aba Cadastro. A ficha não pode ser
+   excluída: tem o agendamento de teste `medical.appointments` id **652**
+   (10/07 09:30, WhatsApp, status 4, número `5527988838365`).
 
 ---
 

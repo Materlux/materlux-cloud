@@ -42,14 +42,26 @@ def slots(professional_id: int, service_id: int, data: str,
             "duracao_min": scheduling.slot_minutes(professional_id, service_id)}
 
 
+_CANCELLED_STATUSES = [3, 4, 5]  # cancelada (paciente/clínica) e expirado
+
+
 @router.get("/api/appointments")
 def list_appointments(data: str, professional_id: int | None = None,
+                      data_fim: str | None = None, cancelados: bool = False,
                       user: dict = Depends(current_user)):
     d = date.fromisoformat(data)
     day_start = datetime.combine(d, datetime.min.time(), tzinfo=TZ)
-    day_end = day_start + timedelta(days=1)
+    d_fim = date.fromisoformat(data_fim) if data_fim else d
+    day_end = datetime.combine(d_fim, datetime.min.time(), tzinfo=TZ) + timedelta(days=1)
     where = "a.start_time >= %s AND a.start_time < %s"
     params: list = [day_start, day_end]
+    if cancelados:
+        # aba Cancelamentos: só os que saíram da agenda
+        where += " AND a.status_id = ANY(%s)"
+    else:
+        # agenda principal: cancelados/expirados não aparecem
+        where += " AND a.status_id <> ALL(%s)"
+    params.append(_CANCELLED_STATUSES)
     if professional_id:
         where += " AND a.professional_id = %s"
         params.append(professional_id)
@@ -72,6 +84,7 @@ def list_appointments(data: str, professional_id: int | None = None,
     for r in rows:
         out.append({
             "id": r["id"],
+            "data": r["start_time"].astimezone(TZ).strftime("%d/%m/%Y"),
             "hora": r["start_time"].astimezone(TZ).strftime("%H:%M"),
             "paciente": f"{r['first_name']} {r['last_name']}".strip(),
             "cpf": r["cpf"] or "",
