@@ -7,6 +7,7 @@ continuidade entre mensagens.
 """
 import json
 import os
+import re
 import unicodedata
 from pathlib import Path
 from datetime import datetime, date, timedelta
@@ -368,6 +369,13 @@ def transferir_para_humano(sender_number: str) -> dict:
 # ---------------------------------------------------------------- loop do agente
 _TOOLS_SPEC = None
 
+# resposta que promete agir "depois" — o modelo não tem 'depois'; detectamos e
+# forçamos mais uma rodada para ele executar a ferramenta de fato
+_PROMESSA = re.compile(
+    r"aguarde|s[oó] um (momento|instante|minutinho)|um momento|"
+    r"enquanto (eu )?(consulto|verifico|confiro)|"
+    r"vou (verificar|consultar|checar|conferir)", re.IGNORECASE)
+
 
 def _build_tools():
     from google.genai import types
@@ -505,6 +513,7 @@ def process_message(sender_number: str, text: str) -> str:
     cfg = types.GenerateContentConfig(system_instruction=sys, tools=_build_tools())
 
     final_text = ""
+    nudged = False
     for _ in range(6):  # limita as rodadas de tool-calling
         resp = client.models.generate_content(
             model=_s.GEMINI_MODEL, contents=contents, config=cfg)
@@ -513,6 +522,16 @@ def process_message(sender_number: str, text: str) -> str:
         contents.append(cand.content)
         if not calls:
             final_text = resp.text or ""
+            if not nudged and _PROMESSA.search(final_text):
+                # prometeu agir e parou: devolve a bola uma vez para ele executar
+                nudged = True
+                print(f"[agent] nudge: resposta prometia acao sem ferramenta", flush=True)
+                contents.append(types.Content(role="user", parts=[types.Part(text=(
+                    "[sistema] Você prometeu consultar/verificar algo, mas terminou a "
+                    "resposta sem chamar ferramenta — a paciente ficaria esperando para "
+                    "sempre. Execute a ferramenta necessária AGORA e responda com o "
+                    "resultado final, sem pedir para aguardar."))]))
+                continue
             break
         tool_parts = []
         for fc in calls:
