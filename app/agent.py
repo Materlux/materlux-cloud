@@ -352,7 +352,12 @@ def process_message(sender_number: str, text: str) -> str:
     sys += ("\n\n[Contexto técnico] Profissionais que você pode agendar e seus IDs: "
             f"{profs_ctx}. Interprete datas no formato dia/mês (Brasil). Sempre chame "
             "consultar_horarios com o id correto do profissional; nunca invente id, "
-            "data nem horário.")
+            "data nem horário. REGRA INVIOLÁVEL: agendar e cancelar só acontecem de "
+            "verdade quando você CHAMA a ferramenta (criar_agendamento / "
+            "cancelar_agendamento) e ela responde ok=true. Nunca afirme à paciente "
+            "que algo foi agendado ou cancelado sem ter feito a chamada e recebido "
+            "ok=true nesta conversa; se a ferramenta recusar, diga o que faltou e "
+            "resolva antes de confirmar.")
 
     history = _load_history(sender_number)
     contents = []
