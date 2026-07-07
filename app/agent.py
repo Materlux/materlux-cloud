@@ -87,12 +87,36 @@ def consultar_horarios(professional_id: int, service_id: int, data_iso: str) -> 
 
 
 def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
-                      data_iso: str, hora: str, nome_paciente: str, cpf: str) -> dict:
+                      data_iso: str, hora: str, nome_paciente: str, cpf: str,
+                      nome_servico: str = "") -> dict:
     cpf_digits = _valida_cpf(cpf)
     if not cpf_digits:
         return {"ok": False, "motivo": "cpf_invalido",
                 "detalhe": ("O CPF informado não é válido. Peça para a paciente "
                             "conferir e enviar novamente os 11 dígitos.")}
+    # trava: o serviço tem que ser da profissional escolhida (o modelo já confundiu
+    # ids e agendou serviço de um profissional na agenda do outro)
+    svc = db.query(
+        "SELECT s.name FROM medical.professional_services ps "
+        "JOIN medical.services s ON s.id = ps.service_id "
+        "WHERE ps.professional_id = %s AND ps.service_id = %s",
+        (professional_id, service_id), one=True,
+    )
+    if not svc:
+        return {"ok": False, "motivo": "servico_invalido",
+                "detalhe": ("Esse service_id não pertence a essa profissional. "
+                            "Chame listar_servicos dela e use exatamente o "
+                            "service_id retornado.")}
+    # trava contra id trocado dentro da lista certa: o nome que o modelo diz estar
+    # agendando tem que conferir com o nome real do service_id informado
+    nome_norm, real_norm = _norm_name(nome_servico), _norm_name(svc["name"])
+    if not nome_norm or (nome_norm != real_norm
+                         and nome_norm not in real_norm and real_norm not in nome_norm):
+        return {"ok": False, "motivo": "servico_nao_confere",
+                "detalhe": (f"O service_id {service_id} corresponde a "
+                            f"'{svc['name']}', não a '{nome_servico or '(vazio)'}'. "
+                            "Confira na lista de listar_servicos o id do serviço "
+                            "que a paciente pediu e tente de novo.")}
     start = datetime.fromisoformat(f"{data_iso}T{hora}:00").replace(tzinfo=TZ)
     # revalida que o horário ainda está livre (evita corrida)
     if hora not in scheduling.available_slots(professional_id, service_id, start.date()):
@@ -111,6 +135,7 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
         "ok": True,
         "appointment_id": row["id"],
         "quando": start.strftime("%d/%m/%Y às %H:%M"),
+        "servico": svc["name"],
         "profissional": scheduling.professional_name(professional_id),
     }
 
@@ -145,23 +170,34 @@ def cancelar_agendamento(sender_number: str, appointment_id: int, motivo: str) -
                 "detalhe": ("O motivo do cancelamento é obrigatório. Pergunte à "
                             "paciente por que ela precisa cancelar antes de chamar "
                             "esta ferramenta.")}
-    # só cancela agendamento ativo vinculado a uma ficha deste telefone
+    # só cancela agendamento vinculado a uma ficha deste telefone
     r = db.query(
-        "SELECT a.id, a.start_time FROM medical.appointments a "
+        "SELECT a.id, a.start_time, a.status_id FROM medical.appointments a "
         "JOIN patients.contacts c ON c.patient_id = a.patient_id "
-        "WHERE a.id = %s AND c.phone_number = %s AND a.status_id = ANY(%s)",
-        (appointment_id, sender_number, [1, 2]), one=True,
+        "WHERE a.id = %s AND c.phone_number = %s",
+        (appointment_id, sender_number), one=True,
     )
     if not r:
         return {"ok": False, "motivo_recusa": "agendamento_nao_encontrado",
-                "detalhe": ("Não há agendamento ativo com esse id para este número. "
-                            "Use listar_agendamentos_futuros para conferir.")}
+                "detalhe": ("Não há agendamento com esse appointment_id para este "
+                            "número — você provavelmente usou um id errado. Os "
+                            "agendamentos ativos reais deste número estão em "
+                            "'ativos'; use o appointment_id EXATO de lá."),
+                "ativos": listar_agendamentos_futuros(sender_number)}
+    quando = r["start_time"].astimezone(TZ).strftime("%d/%m/%Y às %H:%M")
+    if r["status_id"] in (3, 4, 5):
+        return {"ok": True, "ja_estava_cancelado": True, "cancelado": quando,
+                "detalhe": ("Esse agendamento JÁ está cancelado — não repita a "
+                            "chamada; apenas confirme à paciente que está tudo "
+                            "certo, o cancelamento já consta no sistema.")}
+    if r["status_id"] not in (1, 2):
+        return {"ok": False, "motivo_recusa": "nao_cancelavel",
+                "detalhe": "Esse agendamento já foi realizado; não dá para cancelar."}
     db.query(
         "UPDATE medical.appointments SET status_id = 3, motivo_cancelamento = %s "
         "WHERE id = %s", (motivo, appointment_id), commit=True,
     )
-    return {"ok": True,
-            "cancelado": r["start_time"].astimezone(TZ).strftime("%d/%m/%Y às %H:%M")}
+    return {"ok": True, "cancelado": quando}
 
 
 def _norm_name(s: str) -> str:
@@ -347,9 +383,14 @@ def _build_tools():
                 "nome_paciente": types.Schema(type="STRING",
                                               description="Nome completo da paciente"),
                 "cpf": types.Schema(type="STRING",
-                                    description="CPF da paciente, 11 dígitos")},
+                                    description="CPF da paciente, 11 dígitos"),
+                "nome_servico": types.Schema(
+                    type="STRING",
+                    description=("Nome do serviço EXATAMENTE como retornado por "
+                                 "listar_servicos — é conferido contra o "
+                                 "service_id"))},
                 required=["professional_id", "service_id", "data_iso", "hora",
-                          "nome_paciente", "cpf"]),
+                          "nome_paciente", "cpf", "nome_servico"]),
         ),
         types.FunctionDeclaration(
             name="transferir_para_humano",
@@ -390,7 +431,7 @@ _DISPATCH = {
         a["professional_id"], a["service_id"], a["data_iso"]),
     "criar_agendamento": lambda a, s: criar_agendamento(
         s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"],
-        a["nome_paciente"], a.get("cpf", "")),
+        a["nome_paciente"], a.get("cpf", ""), a.get("nome_servico", "")),
     "transferir_para_humano": lambda a, s: transferir_para_humano(s),
     "listar_agendamentos_futuros": lambda a, s: listar_agendamentos_futuros(s),
     "cancelar_agendamento": lambda a, s: cancelar_agendamento(
@@ -415,7 +456,10 @@ def process_message(sender_number: str, text: str) -> str:
     sys += ("\n\n[Contexto técnico] Profissionais que você pode agendar e seus IDs: "
             f"{profs_ctx}. Interprete datas no formato dia/mês (Brasil). Sempre chame "
             "consultar_horarios com o id correto do profissional; nunca invente id, "
-            "data nem horário. REGRA INVIOLÁVEL: agendar e cancelar só acontecem de "
+            "data nem horário. Use SEMPRE o service_id retornado por listar_servicos "
+            "da MESMA profissional que vai atender — nunca um id de memória ou de "
+            "outra profissional. Ao confirmar, repita o nome do serviço devolvido "
+            "pela ferramenta. REGRA INVIOLÁVEL: agendar e cancelar só acontecem de "
             "verdade quando você CHAMA a ferramenta (criar_agendamento / "
             "cancelar_agendamento) e ela responde ok=true. Nunca afirme à paciente "
             "que algo foi agendado ou cancelado sem ter feito a chamada e recebido "
