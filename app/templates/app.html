@@ -37,6 +37,8 @@
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .hide{display:none}
   .ok{color:#1e7d3c}.err{color:#c0392b}
+  .alerta{background:#fdecea;border:1px solid #f5c6cb;color:#a94442;border-radius:8px;
+    padding:10px 12px;margin-top:12px;font-size:13px;line-height:1.5}
 </style></head>
 <body>
 <header>
@@ -96,10 +98,10 @@
     <h3>Cadastro de paciente</h3>
     <p class="muted">Todos os campos são obrigatórios (necessários para nota fiscal).</p>
     <div class="grid2">
-      <div><label>Nome completo *</label><input id="cd-nome" style="width:100%"></div>
+      <div><label>Nome completo *</label><input id="cd-nome" style="width:100%" oninput="cdCheckDup()"></div>
       <div><label>E-mail *</label><input id="cd-email" type="email" style="width:100%"></div>
       <div><label>Telefone *</label><input id="cd-fone" style="width:100%" placeholder="27999999999"></div>
-      <div><label>CPF *</label><input id="cd-cpf" style="width:100%"></div>
+      <div><label>CPF *</label><input id="cd-cpf" style="width:100%" placeholder="000.000.000-00" maxlength="14" inputmode="numeric" oninput="maskCpf(this)"></div>
       <div><label>Data de nascimento *</label><input id="cd-nasc" type="text" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:100%"></div>
       <div><label>CEP *</label><input id="cd-cep" style="width:100%" placeholder="29000-000" maxlength="9" inputmode="numeric" oninput="maskCep(this)" onblur="buscaCep()"></div>
       <div><label>Rua</label><input id="cd-rua" style="width:100%"></div>
@@ -109,6 +111,7 @@
       <div><label>Número *</label><input id="cd-num" style="width:100%"></div>
       <div><label>Complemento</label><input id="cd-compl" style="width:100%"></div>
     </div>
+    <div id="cd-dup" class="alerta hide"></div>
     <button class="act" style="margin-top:16px" onclick="cdSave()">Cadastrar paciente</button>
     <span class="muted" id="cd-msg"></span>
   </section>
@@ -290,7 +293,35 @@ async function nvSave(){
 }
 
 /* ---------- CADASTRO ---------- */
-let cepBuscado='';
+let cepBuscado='', cdTimer2;
+function maskCpf(el){
+  const v=el.value.replace(/\D/g,'').slice(0,11);
+  el.value=v.length>9?v.slice(0,3)+'.'+v.slice(3,6)+'.'+v.slice(6,9)+'-'+v.slice(9)
+    :v.length>6?v.slice(0,3)+'.'+v.slice(3,6)+'.'+v.slice(6)
+    :v.length>3?v.slice(0,3)+'.'+v.slice(3):v;
+  cdCheckDup();
+}
+function cdCheckDup(){clearTimeout(cdTimer2);cdTimer2=setTimeout(async()=>{
+  const nome=$('cd-nome').value.trim(), cpf=$('cd-cpf').value.replace(/\D/g,'');
+  const avisos=[];
+  try{
+    if(cpf.length===11){
+      const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(cpf))).json();
+      const hit=rows.find(p=>p.cpf===cpf);
+      if(hit)avisos.push(`⚠️ <b>CPF já cadastrado</b> para a paciente <b>${hit.nome}</b>. O sistema não deixará salvar de novo — confira na aba Histórico/Prontuário.`);
+    }
+    if(nome.length>=3){
+      const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(nome))).json();
+      if(rows.length)avisos.push('⚠️ Já existe cadastro com nome parecido: '
+        +rows.slice(0,5).map(p=>`<b>${p.nome}</b>${p.cpf?' — CPF '+p.cpf:' — sem CPF'}`).join(' · ')
+        +(rows.length>5?` (e mais ${rows.length-5})`:'' )
+        +'. Confira se não é a mesma paciente antes de salvar.');
+    }
+  }catch(e){/* falha na busca não deve travar o cadastro */}
+  const box=$('cd-dup');
+  box.innerHTML=avisos.join('<br><br>');
+  box.classList.toggle('hide',!avisos.length);
+},350);}
 function maskCep(el){
   let v=el.value.replace(/\D/g,'').slice(0,8);
   el.value=v.length>5?v.slice(0,5)+'-'+v.slice(5):v;
@@ -321,7 +352,7 @@ async function cdSave(){
   const m=$('cd-msg');
   if(r.ok){m.textContent='✅ Paciente cadastrada!';m.className='muted ok';
     ['cd-nome','cd-email','cd-fone','cd-cpf','cd-nasc','cd-cep','cd-rua','cd-bairro','cd-cidade','cd-uf','cd-num','cd-compl'].forEach(i=>$(i).value='');
-    cepBuscado='';}
+    cepBuscado=''; clearTimeout(cdTimer2); $('cd-dup').classList.add('hide'); $('cd-dup').innerHTML='';}
   else{m.textContent='Erro: '+(await r.json()).detail;m.className='muted err';}
 }
 
