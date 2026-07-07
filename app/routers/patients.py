@@ -184,8 +184,8 @@ def delete_patient(patient_id: int, user: dict = Depends(current_user)):
 @router.get("/api/patients/{patient_id}/appointments")
 def patient_appointments(patient_id: int, user: dict = Depends(current_user)):
     rows = db.query(
-        "SELECT a.id, a.start_time, st.status_name AS status, s.name AS servico, "
-        "pr.title, pr.full_name AS profissional "
+        "SELECT a.id, a.start_time, a.valor_pago, st.status_name AS status, "
+        "s.name AS servico, pr.title, pr.full_name AS profissional "
         "FROM medical.appointments a "
         "JOIN medical.appointment_statuses st ON st.id = a.status_id "
         "LEFT JOIN medical.services s ON s.id = a.service_id "
@@ -199,4 +199,5 @@ def patient_appointments(patient_id: int, user: dict = Depends(current_user)):
         "servico": r["servico"] or "",
         "profissional": f"{(r['title'] or '').strip()} {r['profissional']}".strip(),
         "status": r["status"],
+        "valor": float(r["valor_pago"]) if r["valor_pago"] is not None else None,
     } for r in rows]

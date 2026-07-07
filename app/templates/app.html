@@ -129,7 +129,7 @@
     <div id="hi-results"></div>
     <h4 id="hi-name" class="hide"></h4>
     <table id="hi-table" class="hide"><thead><tr><th>Data</th><th>Procedimento</th>
-      <th>Profissional</th><th>Status</th></tr></thead><tbody id="hi-body"></tbody></table>
+      <th>Profissional</th><th>Valor</th></tr></thead><tbody id="hi-body"></tbody></table>
     <p class="muted" id="hi-empty"></p>
   </section>
 
@@ -507,7 +507,7 @@ async function hiOpen(p){
   $('hi-empty').textContent=rows.length?'':'Sem agendamentos.';
   $('hi-table').classList.toggle('hide',!rows.length);
   $('hi-body').innerHTML=rows.map(a=>`<tr><td>${a.data}</td><td>${a.servico}</td>
-    <td>${a.profissional}</td><td>${a.status}</td></tr>`).join('');
+    <td>${a.profissional}</td><td>${money(a.valor)}</td></tr>`).join('');
 }
 
 /* ---------- EDITAR ---------- */
