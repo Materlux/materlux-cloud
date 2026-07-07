@@ -24,7 +24,8 @@ com o Dr. Murilo Ferraz ou com a Dra. Isadora Vencioneck.
 Regras:
 - Nunca invente horários. Sempre use as ferramentas para consultar a agenda real.
 - Antes de confirmar, colete: nome da profissional desejada, tipo de atendimento \
-(serviço), data e horário. Se a paciente não souber o serviço, liste as opções da \
+(serviço), data, horário, nome completo e CPF da paciente (obrigatório — sem CPF \
+válido não há agendamento). Se a paciente não souber o serviço, liste as opções da \
 profissional escolhida.
 - Confirme os dados com a paciente antes de chamar criar_agendamento.
 - Ao confirmar, informe data e horário por extenso e diga que a recepção confirmará \
@@ -82,14 +83,19 @@ def consultar_horarios(professional_id: int, service_id: int, data_iso: str) -> 
 
 
 def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
-                      data_iso: str, hora: str, nome_paciente: str) -> dict:
+                      data_iso: str, hora: str, nome_paciente: str, cpf: str) -> dict:
+    cpf_digits = _valida_cpf(cpf)
+    if not cpf_digits:
+        return {"ok": False, "motivo": "cpf_invalido",
+                "detalhe": ("O CPF informado não é válido. Peça para a paciente "
+                            "conferir e enviar novamente os 11 dígitos.")}
     start = datetime.fromisoformat(f"{data_iso}T{hora}:00").replace(tzinfo=TZ)
     # revalida que o horário ainda está livre (evita corrida)
     if hora not in scheduling.available_slots(professional_id, service_id, start.date()):
         return {"ok": False, "motivo": "horario_indisponivel"}
     end = start + timedelta(minutes=scheduling.slot_minutes(professional_id, service_id))
 
-    patient_id = _get_or_create_patient(sender_number, nome_paciente)
+    patient_id = _get_or_create_patient(sender_number, nome_paciente, cpf_digits)
     row = db.query(
         "INSERT INTO medical.appointments "
         "(professional_id, patient_id, service_id, status_id, start_time, end_time, origem) "
@@ -109,32 +115,67 @@ def _norm_name(s: str) -> str:
     return " ".join((s or "").lower().split())
 
 
-def _get_or_create_patient(sender_number: str, nome: str) -> int:
-    """Encontra a paciente pelo telefone E pelo nome.
+def _valida_cpf(cpf: str) -> str | None:
+    """Valida o CPF (11 dígitos + dígitos verificadores).
 
-    Um mesmo número de WhatsApp pode ser usado por mais de uma pessoa (mãe
-    agendando para a filha, número compartilhado, número de teste). Por isso só
-    reaproveitamos um cadastro existente quando o NOME também bate; caso
-    contrário criamos um cadastro novo vinculado ao mesmo telefone. Assim uma
-    reserva nunca cai na ficha de outra paciente só porque o número coincide.
+    Devolve o CPF normalizado (só dígitos) se for válido; senão None.
     """
-    nome_norm = _norm_name(nome)
+    digits = "".join(c for c in (cpf or "") if c.isdigit())
+    if len(digits) != 11 or digits == digits[0] * 11:
+        return None
+    for i in (9, 10):
+        soma = sum(int(digits[j]) * ((i + 1) - j) for j in range(i))
+        if (soma * 10) % 11 % 10 != int(digits[i]):
+            return None
+    return digits
+
+
+def _get_or_create_patient(sender_number: str, nome: str, cpf: str) -> int:
+    """Encontra a paciente pelo CPF; em segundo caso, por telefone E nome.
+
+    O CPF (já validado, 11 dígitos) é o identificador confiável — é único em
+    patients.records (records_cpf_key). Se existe cadastro com esse CPF, é ela.
+    Sem cadastro por CPF, tentamos telefone+nome (fluxo antigo) e aproveitamos
+    para gravar o CPF na ficha se ela ainda não tiver; um cadastro com CPF
+    DIFERENTE nunca é reaproveitado, mesmo que telefone e nome batam. Em último
+    caso criamos cadastro novo já com o CPF.
+    """
+    achado = db.query(
+        "SELECT id FROM patients.records WHERE cpf = %s", (cpf,), one=True,
+    )
     existentes = db.query(
-        "SELECT p.id, p.first_name, p.last_name FROM patients.contacts c "
+        "SELECT p.id, p.first_name, p.last_name, p.cpf FROM patients.contacts c "
         "JOIN patients.records p ON p.id = c.patient_id WHERE c.phone_number = %s",
         (sender_number,),
     )
+    if achado:
+        # garante que este telefone fique vinculado à ficha encontrada
+        if achado["id"] not in {r["id"] for r in existentes}:
+            db.query(
+                "INSERT INTO patients.contacts (patient_id, phone_number, is_primary) "
+                "VALUES (%s, %s, %s)",
+                (achado["id"], sender_number, len(existentes) == 0), commit=True,
+            )
+        return achado["id"]
+
+    nome_norm = _norm_name(nome)
     if nome_norm:
         for r in existentes:
+            if r["cpf"] and r["cpf"] != cpf:
+                continue
             full = _norm_name(f"{r['first_name']} {r['last_name']}")
             if full and (nome_norm == full or nome_norm in full or full in nome_norm):
+                if not r["cpf"]:
+                    db.query("UPDATE patients.records SET cpf = %s WHERE id = %s",
+                             (cpf, r["id"]), commit=True)
                 return r["id"]
 
     partes = (nome or "Paciente WhatsApp").strip().split(" ", 1)
     first, last = partes[0], (partes[1] if len(partes) > 1 else "")
     pat = db.query(
-        "INSERT INTO patients.records (first_name, last_name) VALUES (%s, %s) RETURNING id",
-        (first, last), one=True, commit=True,
+        "INSERT INTO patients.records (first_name, last_name, cpf) VALUES (%s, %s, %s) "
+        "ON CONFLICT (cpf) DO UPDATE SET cpf = EXCLUDED.cpf RETURNING id",
+        (first, last, cpf), one=True, commit=True,
     )
     db.query(
         "INSERT INTO patients.contacts (patient_id, phone_number, is_primary) VALUES (%s, %s, %s)",
@@ -206,14 +247,20 @@ def _build_tools():
         ),
         types.FunctionDeclaration(
             name="criar_agendamento",
-            description="Cria o agendamento após confirmar todos os dados com a paciente.",
+            description=("Cria o agendamento após confirmar todos os dados com a "
+                         "paciente. O CPF é obrigatório e é validado; se vier "
+                         "inválido, a ferramenta recusa com motivo cpf_invalido."),
             parameters=types.Schema(type="OBJECT", properties={
                 "professional_id": types.Schema(type="INTEGER"),
                 "service_id": types.Schema(type="INTEGER"),
                 "data_iso": types.Schema(type="STRING"),
                 "hora": types.Schema(type="STRING", description="HH:MM"),
-                "nome_paciente": types.Schema(type="STRING")},
-                required=["professional_id", "service_id", "data_iso", "hora", "nome_paciente"]),
+                "nome_paciente": types.Schema(type="STRING",
+                                              description="Nome completo da paciente"),
+                "cpf": types.Schema(type="STRING",
+                                    description="CPF da paciente, 11 dígitos")},
+                required=["professional_id", "service_id", "data_iso", "hora",
+                          "nome_paciente", "cpf"]),
         ),
     ])]
 
@@ -224,7 +271,8 @@ _DISPATCH = {
     "consultar_horarios": lambda a, s: consultar_horarios(
         a["professional_id"], a["service_id"], a["data_iso"]),
     "criar_agendamento": lambda a, s: criar_agendamento(
-        s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"], a["nome_paciente"]),
+        s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"],
+        a["nome_paciente"], a.get("cpf", "")),
 }
 
 
