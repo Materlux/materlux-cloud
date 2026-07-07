@@ -68,6 +68,7 @@ def list_appointments(data: str, professional_id: int | None = None,
     rows = db.query(
         f"""SELECT a.id, a.start_time, a.end_time, a.status_id, a.origem,
                    a.forma_pagamento, a.valor_pago, a.observacoes,
+                   a.motivo_cancelamento,
                    st.status_name AS status,
                    p.first_name, p.last_name, p.cpf,
                    pr.full_name AS profissional, pr.title,
@@ -95,6 +96,7 @@ def list_appointments(data: str, professional_id: int | None = None,
             "forma_pagamento": r["forma_pagamento"] or "",
             "valor_pago": float(r["valor_pago"]) if r["valor_pago"] is not None else None,
             "observacoes": r["observacoes"] or "",
+            "motivo": r["motivo_cancelamento"] or "",
         })
     return out
 
@@ -218,10 +220,23 @@ def set_financeiro(appointment_id: int, body: Financeiro,
     return {"ok": True}
 
 
+class Cancelamento(BaseModel):
+    motivo: str
+
+
 @router.post("/api/appointments/{appointment_id}/cancel")
-def cancel_appointment(appointment_id: int, user: dict = Depends(current_user)):
-    db.query("UPDATE medical.appointments SET status_id = 4 WHERE id = %s",
-             (appointment_id,), commit=True)
+def cancel_appointment(appointment_id: int, body: Cancelamento,
+                       user: dict = Depends(current_user)):
+    motivo = (body.motivo or "").strip()
+    if len(motivo) < 3:
+        raise HTTPException(status_code=400,
+                            detail="Informe o motivo do cancelamento")
+    if not db.query("SELECT id FROM medical.appointments WHERE id = %s",
+                    (appointment_id,), one=True):
+        raise HTTPException(status_code=404, detail="Agendamento não encontrado")
+    db.query("UPDATE medical.appointments SET status_id = 4, "
+             "motivo_cancelamento = %s WHERE id = %s",
+             (motivo, appointment_id), commit=True)
     return {"ok": True}
 
 

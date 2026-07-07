@@ -19,8 +19,9 @@ TZ = ZoneInfo(_s.CLINIC_TZ)
 
 SYSTEM_PROMPT = """Você é a atendente virtual da Clínica Materlux (ginecologia, \
 obstetrícia e pediatria). Fale em português do Brasil, de forma acolhedora, breve \
-e objetiva. Seu único trabalho nesta fase é ajudar a paciente a AGENDAR uma consulta \
-com o Dr. Murilo Ferraz ou com a Dra. Isadora Vencioneck.
+e objetiva. Seu trabalho é ajudar a paciente a AGENDAR ou CANCELAR uma consulta \
+com o Dr. Murilo Ferraz ou com a Dra. Isadora Vencioneck. Para cancelar, o motivo \
+é obrigatório: pergunte, e só chame cancelar_agendamento com o motivo informado.
 
 Regras:
 - Nunca invente horários. Sempre use as ferramentas para consultar a agenda real.
@@ -110,6 +111,55 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
         "quando": start.strftime("%d/%m/%Y às %H:%M"),
         "profissional": scheduling.professional_name(professional_id),
     }
+
+
+def listar_agendamentos_futuros(sender_number: str) -> list[dict]:
+    """Agendamentos ativos (pendente/confirmado) futuros das fichas deste telefone."""
+    rows = db.query(
+        "SELECT DISTINCT a.id, a.start_time, s.name AS servico, pr.title, "
+        "pr.full_name, p.first_name, p.last_name "
+        "FROM medical.appointments a "
+        "JOIN patients.records p ON p.id = a.patient_id "
+        "JOIN patients.contacts c ON c.patient_id = p.id "
+        "JOIN medical.professionals pr ON pr.id = a.professional_id "
+        "LEFT JOIN medical.services s ON s.id = a.service_id "
+        "WHERE c.phone_number = %s AND a.status_id = ANY(%s) "
+        "AND a.start_time > now() ORDER BY a.start_time",
+        (sender_number, [1, 2]),
+    )
+    return [{
+        "appointment_id": r["id"],
+        "quando": r["start_time"].astimezone(TZ).strftime("%d/%m/%Y às %H:%M"),
+        "servico": r["servico"] or "",
+        "profissional": f"{(r['title'] or '').strip()} {r['full_name']}".strip(),
+        "paciente": f"{r['first_name']} {r['last_name']}".strip(),
+    } for r in rows]
+
+
+def cancelar_agendamento(sender_number: str, appointment_id: int, motivo: str) -> dict:
+    motivo = " ".join((motivo or "").split())
+    if len(motivo) < 3:
+        return {"ok": False, "motivo_recusa": "motivo_obrigatorio",
+                "detalhe": ("O motivo do cancelamento é obrigatório. Pergunte à "
+                            "paciente por que ela precisa cancelar antes de chamar "
+                            "esta ferramenta.")}
+    # só cancela agendamento ativo vinculado a uma ficha deste telefone
+    r = db.query(
+        "SELECT a.id, a.start_time FROM medical.appointments a "
+        "JOIN patients.contacts c ON c.patient_id = a.patient_id "
+        "WHERE a.id = %s AND c.phone_number = %s AND a.status_id = ANY(%s)",
+        (appointment_id, sender_number, [1, 2]), one=True,
+    )
+    if not r:
+        return {"ok": False, "motivo_recusa": "agendamento_nao_encontrado",
+                "detalhe": ("Não há agendamento ativo com esse id para este número. "
+                            "Use listar_agendamentos_futuros para conferir.")}
+    db.query(
+        "UPDATE medical.appointments SET status_id = 3, motivo_cancelamento = %s "
+        "WHERE id = %s", (motivo, appointment_id), commit=True,
+    )
+    return {"ok": True,
+            "cancelado": r["start_time"].astimezone(TZ).strftime("%d/%m/%Y às %H:%M")}
 
 
 def _norm_name(s: str) -> str:
@@ -248,6 +298,26 @@ def _build_tools():
                 required=["professional_id", "service_id", "data_iso", "hora",
                           "nome_paciente", "cpf"]),
         ),
+        types.FunctionDeclaration(
+            name="listar_agendamentos_futuros",
+            description=("Lista os agendamentos futuros ainda ativos (pendentes ou "
+                         "confirmados) vinculados ao WhatsApp da paciente. Use antes "
+                         "de cancelar, para identificar qual agendamento ela quer "
+                         "cancelar."),
+            parameters=types.Schema(type="OBJECT", properties={}),
+        ),
+        types.FunctionDeclaration(
+            name="cancelar_agendamento",
+            description=("Cancela um agendamento da paciente. O MOTIVO do "
+                         "cancelamento é obrigatório — pergunte à paciente antes; "
+                         "se vier vazio, a ferramenta recusa."),
+            parameters=types.Schema(type="OBJECT", properties={
+                "appointment_id": types.Schema(type="INTEGER"),
+                "motivo": types.Schema(
+                    type="STRING",
+                    description="Motivo do cancelamento informado pela paciente")},
+                required=["appointment_id", "motivo"]),
+        ),
     ])]
 
 
@@ -259,6 +329,9 @@ _DISPATCH = {
     "criar_agendamento": lambda a, s: criar_agendamento(
         s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"],
         a["nome_paciente"], a.get("cpf", "")),
+    "listar_agendamentos_futuros": lambda a, s: listar_agendamentos_futuros(s),
+    "cancelar_agendamento": lambda a, s: cancelar_agendamento(
+        s, a["appointment_id"], a.get("motivo", "")),
 }
 
 

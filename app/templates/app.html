@@ -163,7 +163,7 @@
       <button class="act" onclick="loadCancel()">Buscar</button>
     </div>
     <table><thead><tr><th>Data</th><th>Hora</th><th>Paciente</th><th>Profissional</th>
-      <th>Serviço</th><th>Status</th><th>Origem</th></tr></thead>
+      <th>Serviço</th><th>Status</th><th>Motivo</th><th>Origem</th></tr></thead>
       <tbody id="cx-body"></tbody></table>
     <p class="muted" id="cx-empty"></p>
   </section>
@@ -268,9 +268,17 @@ async function saveFin(id){
     headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
   const btn=event.target; btn.textContent=r.ok?'✓ salvo':'erro'; setTimeout(()=>btn.textContent='salvar',1500);
 }
+async function askCancel(id){
+  const motivo=prompt('Motivo do cancelamento (obrigatório):');
+  if(motivo===null)return null;                       // desistiu
+  if(motivo.trim().length<3){alert('Informe o motivo do cancelamento.');return null;}
+  const r=await fetch(`/api/appointments/${id}/cancel`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:motivo.trim()})});
+  if(!r.ok)alert('Erro ao cancelar: '+(await r.json()).detail);
+  return r.ok;
+}
 async function cancelAppt(id){
-  if(!confirm('Cancelar este agendamento?'))return;
-  await fetch(`/api/appointments/${id}/cancel`,{method:'POST'});loadAgenda();
+  if(await askCancel(id)!==null)loadAgenda();
 }
 
 /* ---------- CANCELAMENTOS ---------- */
@@ -286,6 +294,7 @@ async function loadCancel(){
   $('cx-body').innerHTML=rows.map(r=>`<tr>
     <td>${r.data}</td><td>${r.hora}</td><td>${r.paciente}</td><td>${r.profissional}</td>
     <td>${r.servico}</td><td>${CXSTATUS[r.status]||r.status}</td>
+    <td>${r.motivo||'<span class="muted">—</span>'}</td>
     <td><span class="tag ${r.origem==='whatsapp'?'wa':''}">${r.origem}</span></td></tr>`).join('');
 }
 
@@ -483,8 +492,8 @@ async function edOpen(p){
     <button class="ghost" onclick="edCancel(${a.id})">cancelar</button></div>`).join('')
     :'<p class="muted">Sem agendamentos.</p>');
 }
-async function edCancel(id){if(!confirm('Cancelar?'))return;
-  await fetch(`/api/appointments/${id}/cancel`,{method:'POST'});edOpen(EDPAT);}
+async function edCancel(id){
+  if(await askCancel(id)!==null)edOpen(EDPAT);}
 async function edResched(id){
   EDAPPT=id; const a=await (await fetch('/api/appointments/'+id)).json();
   $('ed-form').classList.remove('hide');

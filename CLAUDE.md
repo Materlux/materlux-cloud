@@ -86,8 +86,9 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
 - **`medical.services.service_type_id`:** 1=consulta, 3=ultrassom, 4=retorno.
 - **`medical.appointments`:** `professional_id`, `patient_id`, `service_id`, `status_id`,
   `start_time`, `end_time`, `origem` (`whatsapp` | `secretaria` | `cloud`=dados antigos
-  restaurados), e os campos financeiros da v2: `valor_pago numeric(10,2)`,
-  `forma_pagamento varchar(20)`, `observacoes text`.
+  restaurados), os campos financeiros da v2: `valor_pago numeric(10,2)`,
+  `forma_pagamento varchar(20)`, `observacoes text`, e `motivo_cancelamento text`
+  (migração 003 — obrigatório ao cancelar, painel e agente).
 - **`patients.records`:** `first_name`, `last_name`, `email`, `cpf` (constraint única
   `records_cpf_key`, 11 dígitos), `birth_date` (v2), campos `address_*`.
 - **Telefone** fica em **`patients.contacts.phone_number`** (não há unique — um telefone
@@ -187,7 +188,7 @@ app/
   routers/
     appointments.py   # agenda, criar/editar/cancelar, financeiro, relatórios
     patients.py       # busca, cadastro, histórico
-migrations/           # 001_*.sql (base), 002_v2.sql (v2 — já aplicada)
+migrations/           # 001_*.sql (base), 002_v2.sql, 003_motivo_cancelamento.sql
 deploy.sh             # crane push + gcloud run deploy
 REQUISITOS-V2.md      # especificação da v2
 V2-STATUS.md          # checklist de publicação da v2
