@@ -137,7 +137,12 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
   front) · `GET /api/patients/{id}/appointments` (histórico).
 - `GET /api/reports/revenue?inicio=YYYY-MM-DD&fim=YYYY-MM-DD` → total por profissional +
   `total_geral` (só total geral, por decisão do cliente).
-- `POST /webhook/whatsapp` (Z-API).
+- `POST /webhook/whatsapp` (Z-API). **Transbordo humano:** se
+  `conversations.sessions.atendimento_status = 'humano'`, o webhook NÃO chama o
+  Gemini (silêncio; só grava a mensagem no histórico). Controle no painel (aba
+  WhatsApp): `GET /api/wa/conversas` e `POST /api/wa/conversas/{phone}/status`
+  (`bot`|`humano`). O bot pode se pausar via ferramenta `transferir_para_humano`;
+  devolução automática ao bot após 12h (`_HANDOFF_HOURS` em `app/agent.py`).
 
 Frontend `app/templates/app.html` tem 7 abas: Agenda, Novo agendamento, Cadastro,
 Histórico, Editar agendamentos, Prontuário, Relatórios. (A aba "Atendente virtual" de teste
@@ -188,7 +193,7 @@ app/
   routers/
     appointments.py   # agenda, criar/editar/cancelar, financeiro, relatórios
     patients.py       # busca, cadastro, histórico
-migrations/           # 001_*.sql (base), 002_v2.sql, 003_motivo_cancelamento.sql
+migrations/           # 001..004 (004 = transbordo humano em conversations.sessions)
 deploy.sh             # crane push + gcloud run deploy
 REQUISITOS-V2.md      # especificação da v2
 V2-STATUS.md          # checklist de publicação da v2

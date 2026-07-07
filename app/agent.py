@@ -33,6 +33,8 @@ profissional escolhida.
 - Ao confirmar, informe data e horário por extenso e diga que a recepção confirmará \
 os detalhes de pagamento. Não fale sobre QR Code nem porta (desativado nesta fase).
 - Se não houver horário, ofereça as próximas datas disponíveis.
+- Se a paciente pedir para falar com uma pessoa, chame transferir_para_humano e \
+avise que a recepção continuará a conversa neste mesmo WhatsApp.
 - Hoje é {hoje} ({dia_semana})."""
 
 
@@ -252,6 +254,57 @@ def _save_history(sender_number: str, history: list[dict]):
     )
 
 
+# ------------------------------------------------------------ transbordo humano
+_HANDOFF_HOURS = 12  # devolução automática ao bot depois deste tempo pausado
+
+
+def get_atendimento_status(sender_number: str) -> str:
+    """'bot' ou 'humano'. Aplica a devolução automática após _HANDOFF_HOURS."""
+    row = db.query(
+        "SELECT atendimento_status, pausado_em FROM conversations.sessions "
+        "WHERE sender_number = %s", (sender_number,), one=True,
+    )
+    if not row or row["atendimento_status"] != "humano":
+        return "bot"
+    if row["pausado_em"] and \
+            datetime.now(TZ) - row["pausado_em"] > timedelta(hours=_HANDOFF_HOURS):
+        set_atendimento_status(sender_number, "bot")
+        return "bot"
+    return "humano"
+
+
+def set_atendimento_status(sender_number: str, status: str, por: str | None = None):
+    db.query(
+        "INSERT INTO conversations.sessions (sender_number) "
+        "SELECT %s WHERE NOT EXISTS "
+        "(SELECT 1 FROM conversations.sessions WHERE sender_number = %s)",
+        (sender_number, sender_number), commit=True,
+    )
+    pausado = status == "humano"
+    db.query(
+        "UPDATE conversations.sessions SET atendimento_status = %s, "
+        "pausado_em = %s, pausado_por = %s WHERE sender_number = %s",
+        (status, datetime.now(TZ) if pausado else None,
+         (por or None) if pausado else None, sender_number), commit=True,
+    )
+
+
+def log_paused_message(sender_number: str, text: str):
+    """Guarda a mensagem recebida durante atendimento humano — o bot fica em
+    silêncio, mas mantém o contexto para quando a conversa voltar a ele."""
+    history = _load_history(sender_number)
+    history.append({"role": "user", "text": text})
+    _save_history(sender_number, history)
+
+
+def transferir_para_humano(sender_number: str) -> dict:
+    set_atendimento_status(sender_number, "humano", "bot")
+    return {"ok": True,
+            "detalhe": ("Transferido: a recepção continuará a conversa neste mesmo "
+                        "WhatsApp. Despeça-se avisando isso à paciente (e que ela "
+                        "também pode ligar para 27999949612, 8h às 17h).")}
+
+
 # ---------------------------------------------------------------- loop do agente
 _TOOLS_SPEC = None
 
@@ -299,6 +352,15 @@ def _build_tools():
                           "nome_paciente", "cpf"]),
         ),
         types.FunctionDeclaration(
+            name="transferir_para_humano",
+            description=("Transfere a conversa para a recepção (atendente humana): "
+                         "você fica em silêncio e a recepção responde neste mesmo "
+                         "WhatsApp. Use quando a paciente pedir para falar com uma "
+                         "pessoa, houver reclamação, ou o assunto fugir do que você "
+                         "resolve com segurança."),
+            parameters=types.Schema(type="OBJECT", properties={}),
+        ),
+        types.FunctionDeclaration(
             name="listar_agendamentos_futuros",
             description=("Lista os agendamentos futuros ainda ativos (pendentes ou "
                          "confirmados) vinculados ao WhatsApp da paciente. Use antes "
@@ -329,6 +391,7 @@ _DISPATCH = {
     "criar_agendamento": lambda a, s: criar_agendamento(
         s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"],
         a["nome_paciente"], a.get("cpf", "")),
+    "transferir_para_humano": lambda a, s: transferir_para_humano(s),
     "listar_agendamentos_futuros": lambda a, s: listar_agendamentos_futuros(s),
     "cancelar_agendamento": lambda a, s: cancelar_agendamento(
         s, a["appointment_id"], a.get("motivo", "")),

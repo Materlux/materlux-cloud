@@ -5,15 +5,17 @@
 - POST /api/simulate     : endpoint interno para testar o agente sem WhatsApp real.
 """
 import httpx
-from fastapi import APIRouter, Request, Query, Depends
+from zoneinfo import ZoneInfo
+from fastapi import APIRouter, Request, Query, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from ..config import get_settings
 from ..security import current_user
-from .. import agent
+from .. import agent, db
 
 router = APIRouter()
 _s = get_settings()
+TZ = ZoneInfo(_s.CLINIC_TZ)
 
 
 def _extract(provider: str, payload: dict):
@@ -63,9 +65,59 @@ async def incoming(request: Request):
     phone, text = _extract(_s.WA_PROVIDER, payload)
     if not phone or not text:
         return {"status": "ignored"}
+    if agent.get_atendimento_status(phone) == "humano":
+        # transbordo: recepção no comando — bot em silêncio absoluto,
+        # só registra a mensagem para manter o contexto da conversa
+        agent.log_paused_message(phone, text)
+        return {"status": "humano"}
     reply = agent.process_message(phone, text)
     send_reply(phone, reply)
     return {"status": "ok", "reply": reply}
+
+
+class WaStatusIn(BaseModel):
+    status: str  # 'bot' | 'humano'
+
+
+@router.get("/api/wa/conversas")
+def wa_conversas(user: dict = Depends(current_user)):
+    """Conversas recentes do WhatsApp com o status do atendimento (bot/humano)."""
+    rows = db.query(
+        "SELECT s.sender_number, s.pausado_em, s.pausado_por, "
+        "(SELECT max(h.created_at) FROM conversations.state_history h "
+        " WHERE h.sender_number = s.sender_number) AS ultima "
+        "FROM conversations.sessions s "
+        "ORDER BY ultima DESC NULLS LAST LIMIT 50"
+    )
+    out = []
+    for r in rows:
+        status = agent.get_atendimento_status(r["sender_number"])  # aplica o retorno após 12h
+        nomes = db.query(
+            "SELECT DISTINCT p.first_name || ' ' || p.last_name AS nome "
+            "FROM patients.contacts c JOIN patients.records p ON p.id = c.patient_id "
+            "WHERE c.phone_number = %s", (r["sender_number"],),
+        )
+        out.append({
+            "numero": r["sender_number"],
+            "pacientes": ", ".join(sorted(n["nome"].strip() for n in nomes)),
+            "ultima": (r["ultima"].astimezone(TZ).strftime("%d/%m/%Y %H:%M")
+                       if r["ultima"] else ""),
+            "status": status,
+            "pausado_em": (r["pausado_em"].astimezone(TZ).strftime("%d/%m %H:%M")
+                           if status == "humano" and r["pausado_em"] else ""),
+            "pausado_por": (r["pausado_por"] or "") if status == "humano" else "",
+        })
+    return out
+
+
+@router.post("/api/wa/conversas/{phone}/status")
+def wa_set_status(phone: str, body: WaStatusIn,
+                  user: dict = Depends(current_user)):
+    if body.status not in ("bot", "humano"):
+        raise HTTPException(status_code=400, detail="status deve ser 'bot' ou 'humano'")
+    agent.set_atendimento_status(phone, body.status,
+                                 user.get("name") or "painel")
+    return {"ok": True, "status": body.status}
 
 
 class SimIn(BaseModel):

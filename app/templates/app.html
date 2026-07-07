@@ -53,6 +53,7 @@
   <button data-tab="historico" onclick="tab('historico')">Histórico</button>
   <button data-tab="editar" onclick="tab('editar')">Editar agendamentos</button>
   <button data-tab="cancelamentos" onclick="tab('cancelamentos')">Cancelamentos</button>
+  <button data-tab="whats" onclick="tab('whats')">WhatsApp</button>
   <button data-tab="pront" onclick="tab('pront')">Prontuário</button>
   <button data-tab="relatorios" onclick="tab('relatorios')">Relatórios</button>
 </nav>
@@ -168,6 +169,19 @@
     <p class="muted" id="cx-empty"></p>
   </section>
 
+  <!-- WHATSAPP (transbordo humano) -->
+  <section id="whats" class="panel hide">
+    <h3>Atendimento WhatsApp</h3>
+    <p class="muted">"Assumir atendimento" pausa a atendente virtual para aquele número —
+      responda a paciente pelo <b>WhatsApp da clínica</b> (celular ou WhatsApp Web).
+      O contato volta ao bot quando você devolver, ou automaticamente após <b>12 horas</b>.</p>
+    <div class="row"><button class="act" onclick="loadWa()">Atualizar</button></div>
+    <table><thead><tr><th>Número</th><th>Paciente(s)</th><th>Última atividade</th>
+      <th>Atendimento</th><th></th></tr></thead>
+      <tbody id="wa-body"></tbody></table>
+    <p class="muted" id="wa-empty"></p>
+  </section>
+
   <!-- PRONTUARIO -->
   <section id="pront" class="panel hide">
     <div class="row"><div style="flex:1"><label>Buscar paciente (nome ou CPF)</label>
@@ -232,8 +246,9 @@ async function boot(){
 }
 function tab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
-  ['agenda','novo','cadastro','historico','editar','cancelamentos','pront','relatorios']
+  ['agenda','novo','cadastro','historico','editar','cancelamentos','whats','pront','relatorios']
     .forEach(s=>$(s).classList.toggle('hide',s!==t));
+  if(t==='whats')loadWa();
 }
 async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/login';}
 async function getServices(pid){
@@ -296,6 +311,26 @@ async function loadCancel(){
     <td>${r.servico}</td><td>${CXSTATUS[r.status]||r.status}</td>
     <td>${r.motivo||'<span class="muted">—</span>'}</td>
     <td><span class="tag ${r.origem==='whatsapp'?'wa':''}">${r.origem}</span></td></tr>`).join('');
+}
+
+/* ---------- WHATSAPP (transbordo humano) ---------- */
+async function loadWa(){
+  const rows=await (await fetch('/api/wa/conversas')).json();
+  $('wa-empty').textContent=rows.length?'':'Nenhuma conversa registrada ainda.';
+  $('wa-body').innerHTML=rows.map(r=>`<tr${r.status==='humano'?' style="background:#fdecea"':''}>
+    <td>${r.numero}</td><td>${r.pacientes||'—'}</td><td>${r.ultima||'—'}</td>
+    <td>${r.status==='humano'
+      ?`<b class="err">⏸ com humano</b> <span class="muted">desde ${r.pausado_em}${r.pausado_por?' ('+r.pausado_por+')':''}</span>`
+      :'🤖 bot ativo'}</td>
+    <td><button class="ghost" onclick="waToggle('${r.numero}','${r.status==='humano'?'bot':'humano'}')">
+      ${r.status==='humano'?'Devolver para o bot':'Assumir atendimento'}</button></td></tr>`).join('');
+}
+async function waToggle(numero,novo){
+  if(novo==='humano'&&!confirm('Assumir o atendimento deste número?\nA atendente virtual ficará em silêncio (até devolver, ou por 12h).\nResponda a paciente pelo WhatsApp da clínica.'))return;
+  const r=await fetch(`/api/wa/conversas/${numero}/status`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({status:novo})});
+  if(!r.ok)alert('Erro: '+(await r.json()).detail);
+  loadWa();
 }
 
 /* ---------- NOVO AGENDAMENTO ---------- */
