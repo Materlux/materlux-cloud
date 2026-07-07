@@ -265,10 +265,38 @@ def revenue(start: str, end: str, forma_pagamento: str | None = None,
             ORDER BY total DESC""",
         tuple(params),
     )
-    por_prof = [{
+    por = {r["id"]: {
         "profissional": f"{(r['title'] or '').strip()} {r['full_name']}".strip(),
         "total": float(r["total"]), "qtd": r["qtd"],
-    } for r in rows]
+    } for r in rows}
+
+    # partos entram pelo dia do pagamento; não têm forma de pagamento, então só
+    # somam quando o relatório não está filtrado por forma
+    if not forma_pagamento:
+        pw = "t.valor_pago IS NOT NULL AND t.data_pagamento >= %s AND t.data_pagamento <= %s"
+        pparams: list = [date.fromisoformat(start), date.fromisoformat(end)]
+        if professional_id:
+            pw += " AND t.professional_id = %s"
+            pparams.append(professional_id)
+        prows = db.query(
+            f"""SELECT pr.id, pr.title, pr.full_name,
+                       COALESCE(SUM(t.valor_pago), 0) AS total,
+                       COUNT(*) AS qtd
+                FROM medical.partos t
+                JOIN medical.professionals pr ON pr.id = t.professional_id
+                WHERE {pw}
+                GROUP BY pr.id, pr.title, pr.full_name""",
+            tuple(pparams),
+        )
+        for r in prows:
+            item = por.setdefault(r["id"], {
+                "profissional": f"{(r['title'] or '').strip()} {r['full_name']}".strip(),
+                "total": 0.0, "qtd": 0,
+            })
+            item["total"] += float(r["total"])
+            item["qtd"] += r["qtd"]
+
+    por_prof = sorted(por.values(), key=lambda p: -p["total"])
     total_geral = sum(p["total"] for p in por_prof)
     return {"por_profissional": por_prof, "total_geral": total_geral,
             "formas_pagamento": _s.PAYMENT_METHODS}

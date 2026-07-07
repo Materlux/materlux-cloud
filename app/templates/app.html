@@ -55,6 +55,7 @@
   <button data-tab="cancelamentos" onclick="tab('cancelamentos')">Cancelamentos</button>
   <button data-tab="whats" onclick="tab('whats')">WhatsApp</button>
   <button data-tab="pront" onclick="tab('pront')">Prontuário</button>
+  <button data-tab="partos" onclick="tab('partos')">Partos</button>
   <button data-tab="relatorios" onclick="tab('relatorios')">Relatórios</button>
 </nav>
 <main>
@@ -200,6 +201,38 @@
     </div>
   </section>
 
+  <!-- PARTOS -->
+  <section id="partos" class="panel hide">
+    <h3>Registro de partos</h3>
+    <p class="muted">Registre o parto e preencha valor e data do pagamento quando ele acontecer —
+      os valores entram no relatório de faturamento pela <b>data do pagamento</b>.</p>
+    <div class="row">
+      <div style="flex:1"><label>Paciente (buscar por nome ou CPF)</label>
+        <input id="pt-busca" style="width:100%" placeholder="Nome ou CPF" oninput="ptSearch()"></div>
+      <div><label>Profissional</label><select id="pt-prof"></select></div>
+    </div>
+    <div id="pt-results"></div>
+    <div id="pt-selected" class="muted" style="margin-bottom:12px"></div>
+    <div class="row">
+      <div><label>Valor pago</label><input id="pt-valor" style="width:110px" placeholder="0.00"></div>
+      <div><label>Data do pagamento</label><input type="text" id="pt-data" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div style="flex:1"><label>Anotações</label><input id="pt-obs" style="width:100%"></div>
+      <button class="act" onclick="ptSave()">Registrar parto</button>
+    </div>
+    <span class="muted" id="pt-msg"></span>
+    <h4 style="margin-top:22px">Partos registrados</h4>
+    <div class="row">
+      <div><label>De</label><input type="text" id="pt-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div><label>Até</label><input type="text" id="pt-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <button class="act" onclick="loadPartos()">Buscar</button>
+    </div>
+    <p class="muted">Partos ainda sem data de pagamento aparecem sempre, em qualquer período.</p>
+    <table><thead><tr><th>Paciente</th><th>Profissional</th><th>Valor pago</th>
+      <th>Data pagamento</th><th>Anotações</th><th></th></tr></thead>
+      <tbody id="pt-body"></tbody></table>
+    <p class="muted" id="pt-empty"></p>
+  </section>
+
   <!-- RELATORIOS -->
   <section id="relatorios" class="panel hide">
     <h3>Relatório de valores recebidos por profissional</h3>
@@ -238,17 +271,20 @@ async function boot(){
   const opts=PROFS.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
   ['ag-prof','nv-prof','ed-prof'].forEach(s=>$(s).innerHTML=opts);
   $('cx-prof').innerHTML='<option value="">Todas</option>'+opts;
+  $('pt-prof').innerHTML=opts;
   ['ag-date','nv-date','ed-date'].forEach(s=>$(s).value=todayBr());
   $('rp-start').value=todayBr(); $('rp-end').value=todayBr();
   $('cx-start').value=todayBr(); $('cx-end').value=todayBr();
+  $('pt-start').value=todayBr(); $('pt-end').value=todayBr();
   if(ME.professional_id) $('ag-prof').value=ME.professional_id;
   loadAgenda(); nvServices(); rpFormas();
 }
 function tab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
-  ['agenda','novo','cadastro','historico','editar','cancelamentos','whats','pront','relatorios']
+  ['agenda','novo','cadastro','historico','editar','cancelamentos','whats','partos','pront','relatorios']
     .forEach(s=>$(s).classList.toggle('hide',s!==t));
   if(t==='whats')loadWa();
+  if(t==='partos')loadPartos();
 }
 async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/login';}
 async function getServices(pid){
@@ -580,6 +616,61 @@ async function prSave(){
     body:JSON.stringify({patient_id:SELPAT.id,anamnese:t})});
   if(r.ok){$('pr-anam').value='';$('pr-msg').textContent='✅ salvo';openPat(SELPAT);}
   else{$('pr-msg').textContent='erro ao salvar';}
+}
+
+/* ---------- PARTOS ---------- */
+let PTPAT=null, ptTimer;
+function ptSearch(){clearTimeout(ptTimer);ptTimer=setTimeout(async()=>{
+  const q=$('pt-busca').value.trim(); if(q.length<2){$('pt-results').innerHTML='';return;}
+  const rows=await (await fetch('/api/patients/search?name='+encodeURIComponent(q))).json();
+  $('pt-results').innerHTML=rows.map(p=>`<div class="evo" style="cursor:pointer"
+    onclick='ptPick(${JSON.stringify(p)})'>${p.nome} <span class="muted">${p.cpf}</span></div>`).join('');
+},250);}
+function ptPick(p){
+  PTPAT=p; $('pt-results').innerHTML=''; $('pt-busca').value='';
+  $('pt-selected').innerHTML=`Paciente selecionada: <b>${p.nome}</b> ${p.cpf} — <a onclick="ptClear()" style="cursor:pointer;color:var(--rose)">trocar</a>`;
+}
+function ptClear(){PTPAT=null;$('pt-selected').innerHTML='';}
+async function ptSave(){
+  const m=$('pt-msg');
+  if(!PTPAT){m.textContent='Busque e selecione a paciente primeiro.';m.className='muted err';return;}
+  const dataBr=$('pt-data').value.trim(), dataIso=dataBr?brToIso(dataBr):null;
+  if(dataBr&&!dataIso){m.textContent='Data do pagamento inválida — use dd/mm/aaaa.';m.className='muted err';return;}
+  const b={patient_id:PTPAT.id,professional_id:+$('pt-prof').value,
+    valor_pago:$('pt-valor').value?parseFloat($('pt-valor').value):null,
+    data_pagamento:dataIso,observacoes:$('pt-obs').value};
+  const r=await fetch('/api/partos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  if(r.ok){m.textContent='✅ Parto registrado!';m.className='muted ok';
+    ptClear();$('pt-valor').value=$('pt-data').value=$('pt-obs').value='';loadPartos();}
+  else{m.textContent='Erro: '+(await r.json()).detail;m.className='muted err';}
+}
+async function loadPartos(){
+  const ini=brToIso($('pt-start').value), fim=brToIso($('pt-end').value);
+  if(!ini||!fim){$('pt-empty').textContent='Datas inválidas — use dd/mm/aaaa.';$('pt-body').innerHTML='';return;}
+  const rows=await (await fetch(`/api/partos?inicio=${ini}&fim=${fim}`)).json();
+  $('pt-empty').textContent=rows.length?'':'Nenhum parto no período.';
+  $('pt-body').innerHTML=rows.map(r=>`<tr>
+    <td>${r.paciente}</td><td>${r.profissional}</td>
+    <td><input id="ptv-${r.id}" style="width:90px" value="${r.valor_pago!=null?r.valor_pago:''}" placeholder="0.00"></td>
+    <td><input id="ptd-${r.id}" style="width:110px" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" value="${r.data_pagamento}"></td>
+    <td><input id="pto-${r.id}" value="${(r.observacoes||'').replace(/"/g,'&quot;')}"></td>
+    <td><button class="ghost" onclick="ptFin(${r.id})">salvar</button>
+        <button class="ghost" onclick="ptDel(${r.id})">excluir</button></td></tr>`).join('');
+}
+async function ptFin(id){
+  const dataBr=$('ptd-'+id).value.trim(), dataIso=dataBr?brToIso(dataBr):null;
+  if(dataBr&&!dataIso){alert('Data do pagamento inválida — use dd/mm/aaaa.');return;}
+  const b={valor_pago:$('ptv-'+id).value?parseFloat($('ptv-'+id).value):null,
+    data_pagamento:dataIso,observacoes:$('pto-'+id).value};
+  const r=await fetch('/api/partos/'+id,{method:'PATCH',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  const btn=event.target; btn.textContent=r.ok?'✓ salvo':'erro'; setTimeout(()=>btn.textContent='salvar',1500);
+}
+async function ptDel(id){
+  if(!confirm('Excluir este registro de parto?'))return;
+  const r=await fetch('/api/partos/'+id,{method:'DELETE'});
+  if(!r.ok)alert('Erro: '+(await r.json()).detail);
+  loadPartos();
 }
 
 /* ---------- RELATORIOS ---------- */

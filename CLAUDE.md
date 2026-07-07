@@ -140,7 +140,11 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
 - `GET /api/patients/search?name=` · `POST /api/patients` (cadastro completo + ViaCEP no
   front) · `GET /api/patients/{id}/appointments` (histórico).
 - `GET /api/reports/revenue?inicio=YYYY-MM-DD&fim=YYYY-MM-DD` → total por profissional +
-  `total_geral` (só total geral, por decisão do cliente).
+  `total_geral` (só total geral, por decisão do cliente). Inclui **partos** (pela
+  `data_pagamento`), exceto quando filtrado por forma de pagamento (partos não têm forma).
+- **Partos** (`medical.partos`, migração 005): `POST/GET/PATCH/DELETE /api/partos` —
+  registro com paciente, profissional, `valor_pago`, `data_pagamento`, `observacoes`.
+  Aba própria no painel; partos sem `data_pagamento` aparecem em qualquer período.
 - `POST /webhook/whatsapp` (Z-API). **Transbordo humano:** se
   `conversations.sessions.atendimento_status = 'humano'`, o webhook NÃO chama o
   Gemini (silêncio; só grava a mensagem no histórico). Controle no painel (aba
@@ -148,9 +152,9 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
   (`bot`|`humano`). O bot pode se pausar via ferramenta `transferir_para_humano`;
   devolução automática ao bot após 12h (`_HANDOFF_HOURS` em `app/agent.py`).
 
-Frontend `app/templates/app.html` tem 7 abas: Agenda, Novo agendamento, Cadastro,
-Histórico, Editar agendamentos, Prontuário, Relatórios. (A aba "Atendente virtual" de teste
-foi removida na v2.)
+Frontend `app/templates/app.html` tem 10 abas: Agenda, Novo agendamento, Cadastro,
+Histórico, Editar agendamentos, Cancelamentos, WhatsApp (transbordo), Partos,
+Prontuário, Relatórios. (A aba "Atendente virtual" de teste foi removida na v2.)
 
 ---
 
@@ -197,7 +201,8 @@ app/
   routers/
     appointments.py   # agenda, criar/editar/cancelar, financeiro, relatórios
     patients.py       # busca, cadastro, histórico
-migrations/           # 001..004 (004 = transbordo humano em conversations.sessions)
+    partos.py         # registro de partos (valor/data de pagamento → relatórios)
+migrations/           # 001..005 (004 = transbordo humano; 005 = medical.partos)
 deploy.sh             # crane push + gcloud run deploy
 REQUISITOS-V2.md      # especificação da v2
 V2-STATUS.md          # checklist de publicação da v2
