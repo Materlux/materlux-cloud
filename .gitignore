@@ -4,6 +4,7 @@ __pycache__/
 venv/
 .venv/
 *.sql
+!migrations/*.sql
 *.dump
 *.tar
 service-account*.json
