@@ -39,6 +39,8 @@
   .ok{color:#1e7d3c}.err{color:#c0392b}
   .alerta{background:#fdecea;border:1px solid #f5c6cb;color:#a94442;border-radius:8px;
     padding:10px 12px;margin-top:12px;font-size:13px;line-height:1.5}
+  .calbtn{border:0;background:#f2e9e7;border-radius:8px;padding:8px 9px;cursor:pointer;
+    font-size:14px;margin-left:4px;vertical-align:bottom}
 </style></head>
 <body>
 <header>
@@ -63,7 +65,7 @@
   <section id="agenda" class="panel">
     <div class="row">
       <div><label>Profissional</label><select id="ag-prof"></select></div>
-      <div><label>Data</label><input type="text" id="ag-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div><label>Data</label><input type="text" id="ag-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('ag-date',loadAgenda)" title="Abrir calendário">📅</button></div>
       <button class="act" onclick="loadAgenda()">Ver agenda</button>
     </div>
     <table><thead><tr>
@@ -84,7 +86,7 @@
     <div class="row">
       <div><label>Profissional</label><select id="nv-prof" onchange="nvServices()"></select></div>
       <div><label>Serviço</label><select id="nv-serv" onchange="nvSlots()"></select></div>
-      <div><label>Data</label><input type="text" id="nv-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this,nvSlots)" style="width:110px"></div>
+      <div><label>Data</label><input type="text" id="nv-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this,nvSlots)" style="width:110px"><button class="calbtn" onclick="openCal('nv-date',nvSlots)" title="Abrir calendário">📅</button></div>
       <div><label>Horário</label><select id="nv-hora"></select></div>
     </div>
     <div class="row" id="nv-newfields">
@@ -108,7 +110,7 @@
       <div><label>E-mail *</label><input id="cd-email" type="email" style="width:100%"></div>
       <div><label>Telefone *</label><input id="cd-fone" style="width:100%" placeholder="27999999999"></div>
       <div><label>CPF *</label><input id="cd-cpf" style="width:100%" placeholder="000.000.000-00" maxlength="14" inputmode="numeric" oninput="maskCpf(this)"></div>
-      <div><label>Data de nascimento *</label><input id="cd-nasc" type="text" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:100%"></div>
+      <div><label>Data de nascimento *</label><input id="cd-nasc" type="text" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:calc(100% - 46px)"><button class="calbtn" onclick="openCal('cd-nasc')" title="Abrir calendário">📅</button></div>
       <div><label>CEP *</label><input id="cd-cep" style="width:100%" placeholder="29000-000" maxlength="9" inputmode="numeric" oninput="maskCep(this)" onblur="buscaCep()"></div>
       <div><label>Rua</label><input id="cd-rua" style="width:100%"></div>
       <div><label>Bairro</label><input id="cd-bairro" style="width:100%"></div>
@@ -145,7 +147,7 @@
       <div class="row">
         <div><label>Profissional</label><select id="ed-prof" onchange="edServices()"></select></div>
         <div><label>Serviço</label><select id="ed-serv" onchange="edSlots()"></select></div>
-        <div><label>Data</label><input type="text" id="ed-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this,edSlots)" style="width:110px"></div>
+        <div><label>Data</label><input type="text" id="ed-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this,edSlots)" style="width:110px"><button class="calbtn" onclick="openCal('ed-date',edSlots)" title="Abrir calendário">📅</button></div>
         <div><label>Horário</label><select id="ed-hora"></select></div>
         <button class="act" onclick="edSaveResched()">Salvar remarcação</button>
       </div>
@@ -160,8 +162,8 @@
       cancelados pela clínica e expirados.</p>
     <div class="row">
       <div><label>Profissional</label><select id="cx-prof"></select></div>
-      <div><label>De</label><input type="text" id="cx-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
-      <div><label>Até</label><input type="text" id="cx-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div><label>De</label><input type="text" id="cx-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('cx-start')" title="Abrir calendário">📅</button></div>
+      <div><label>Até</label><input type="text" id="cx-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('cx-end')" title="Abrir calendário">📅</button></div>
       <button class="act" onclick="loadCancel()">Buscar</button>
     </div>
     <table><thead><tr><th>Data</th><th>Hora</th><th>Paciente</th><th>Profissional</th>
@@ -215,15 +217,15 @@
     <div id="pt-selected" class="muted" style="margin-bottom:12px"></div>
     <div class="row">
       <div><label>Valor pago</label><input id="pt-valor" style="width:110px" placeholder="0.00"></div>
-      <div><label>Data do pagamento</label><input type="text" id="pt-data" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div><label>Data do pagamento</label><input type="text" id="pt-data" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('pt-data')" title="Abrir calendário">📅</button></div>
       <div style="flex:1"><label>Anotações</label><input id="pt-obs" style="width:100%"></div>
       <button class="act" onclick="ptSave()">Registrar parto</button>
     </div>
     <span class="muted" id="pt-msg"></span>
     <h4 style="margin-top:22px">Partos registrados</h4>
     <div class="row">
-      <div><label>De</label><input type="text" id="pt-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
-      <div><label>Até</label><input type="text" id="pt-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div><label>De</label><input type="text" id="pt-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('pt-start')" title="Abrir calendário">📅</button></div>
+      <div><label>Até</label><input type="text" id="pt-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('pt-end')" title="Abrir calendário">📅</button></div>
       <button class="act" onclick="loadPartos()">Buscar</button>
     </div>
     <p class="muted">Partos ainda sem data de pagamento aparecem sempre, em qualquer período.</p>
@@ -237,8 +239,8 @@
   <section id="relatorios" class="panel hide">
     <h3>Relatório de valores recebidos por profissional</h3>
     <div class="row">
-      <div><label>De</label><input type="text" id="rp-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
-      <div><label>Até</label><input type="text" id="rp-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"></div>
+      <div><label>De</label><input type="text" id="rp-start" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('rp-start')" title="Abrir calendário">📅</button></div>
+      <div><label>Até</label><input type="text" id="rp-end" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('rp-end')" title="Abrir calendário">📅</button></div>
       <div><label>Forma de pagamento</label><select id="rp-forma"><option value="">Todas</option></select></div>
       <button class="act" onclick="rpRun()">Gerar relatório</button>
     </div>
@@ -247,6 +249,8 @@
     <h3 id="rp-total" style="margin-top:16px"></h3>
   </section>
 </main>
+<input type="date" id="cal-hidden"
+  style="position:absolute;opacity:0;width:1px;height:1px;border:0;padding:0;pointer-events:none">
 <script>
 let ME=null, PROFS=[], SERVICES={}, SELPAT=null, NVPAT=null, EDPAT=null, EDAPPT=null;
 const $=id=>document.getElementById(id);
@@ -261,6 +265,22 @@ function maskDate(el,cb){
   el.value=v;
   if(cb&&v.length===10)cb();
 }
+/* calendário visual: abre o seletor nativo e devolve a data já em dd/mm/aaaa */
+let CALCB=null;
+function openCal(id,cb){
+  const el=$(id), h=$('cal-hidden');
+  if(!h.showPicker){el.focus();return;}   // navegador sem suporte: segue a digitação
+  const r=el.getBoundingClientRect();
+  h.style.left=(r.left+window.scrollX)+'px';
+  h.style.top=(r.bottom+window.scrollY)+'px';
+  h.value=brToIso(el.value)||brToIso(todayBr());
+  h.dataset.target=id; CALCB=cb||null;
+  try{h.showPicker();}catch(e){el.focus();}
+}
+$('cal-hidden').addEventListener('change',()=>{
+  const h=$('cal-hidden'), t=h.dataset.target;
+  if(t&&h.value){$(t).value=isoToBr(h.value); if(CALCB)CALCB();}
+});
 const money=v=>v==null?'':('R$ '+Number(v).toFixed(2));
 
 async function boot(){
