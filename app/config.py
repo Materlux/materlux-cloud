@@ -35,7 +35,7 @@ class Settings:
     CLINIC_TZ: str = os.getenv("CLINIC_TZ", "America/Sao_Paulo")
     # Profissionais que a atendente virtual pode agendar na Fase 1
     BOOKABLE_PROFESSIONAL_IDS = [
-        int(x) for x in os.getenv("BOOKABLE_PROFESSIONAL_IDS", "1,4").split(",")
+        int(x) for x in os.getenv("BOOKABLE_PROFESSIONAL_IDS", "1,4,12").split(",")
     ]
 
     # Formas de pagamento aceitas (lançadas pela secretária na agenda)

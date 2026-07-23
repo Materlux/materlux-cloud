@@ -79,7 +79,10 @@ bash deploy.sh
 
 Schemas: `medical`, `patients`, `conversations` (entre outros).
 
-- **Profissionais** (`medical.professionals`): Murilo = **id 1**, Isadora = **id 4**.
+- **Profissionais** (`medical.professionals`): Murilo = **id 1**, Isadora = **id 4**,
+  Cristina Corrêa (pediatra/neonatologista) = **id 12** (seg/sex 13–18h). Quem a
+  atendente virtual pode agendar vem de `BOOKABLE_PROFESSIONAL_IDS` (hoje `1,4,12`,
+  definido no `deploy.sh`).
 - **`medical.professional_schedules.day_of_week`** usa o **DOW do Postgres** (Domingo = 0).
 - **`medical.appointment_statuses`:** 1=`pending_payment`, 2=`confirmed`,
   3=`cancelled_by_patient`, 4=`cancelled_by_clinic`, 5=`expired`, 6=`attended`, 7=`no_show`.
@@ -105,10 +108,17 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
 
 - **psycopg 3:** para "não está nesta lista" use **`coluna <> ALL(%s)`** com uma **lista**
   Python — **não** use `NOT IN %s` (dá SyntaxError de placeholder).
+- **Sequências defasadas (banco restaurado):** tabelas repovoadas com ids explícitos
+  no restore (`medical.professionals`, possivelmente `medical.services`,
+  `patients.records`) têm a sequência do `id` atrás do `max(id)` — um `INSERT` sem id
+  explícito dá `duplicate key ... _pkey`. Conserto:
+  `SELECT setval(pg_get_serial_sequence('schema.tabela','id'), (SELECT max(id) FROM schema.tabela));`
+  (idempotente). Foi preciso na `medical.professionals` ao cadastrar a Dra. Cristina.
 - **Slots livres:** `_FREE_STATUS = (3, 4, 5)` — cancelados/expirados **não** ocupam a
   agenda. Por isso um agendamento cancelado (status 4) libera o horário.
 - **Slots variáveis** (`app/scheduling.py`, função `slot_rule(professional_id, service_id)`):
-  - Isadora (prof 4): **60 min, de hora em hora** (`:00`), nos dias da grade dela.
+  - Isadora (prof 4) e Cristina (prof 12): **60 min, de hora em hora** (`:00`), nos
+    dias da grade de cada uma (`HOURLY_IDS` em `app/scheduling.py`).
   - Murilo **consulta** (service_type 1): **45 min em `:00`**, 08:00–18:00.
   - Murilo **procedimento** (US/retorno/Implanon): **15 min em `:45`**, 08:45–18:45.
   - Consulta (`:00`) e procedimento (`:45`) **podem coexistir na mesma hora** do Murilo.

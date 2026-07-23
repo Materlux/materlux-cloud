@@ -1,7 +1,7 @@
 """Cálculo de horários livres — usado pela interface e pelo agente.
 
 Regras de slot (v2), derivadas de profissional + tipo de serviço:
-- Dra. Isadora (id 4): 60 min, ancorado na hora cheia (H:00).
+- Dras. Isadora (id 4) e Cristina (id 12): 60 min, ancorado na hora cheia (H:00).
 - Dr. Murilo (id 1):
     - consulta (service_type_id = 1): 45 min, ancorado em H:00.
     - US/retorno/procedimento (service_type_id 3 ou 4): 15 min, ancorado em H:45.
@@ -17,7 +17,8 @@ _s = get_settings()
 TZ = ZoneInfo(_s.CLINIC_TZ)
 
 _FREE_STATUS = (3, 4, 5)  # cancelados/expirados não ocupam a agenda
-ISADORA_ID = 4
+# Profissionais com slot de 60 min ancorado na hora cheia (pediatria).
+HOURLY_IDS = (4, 12)  # Isadora, Cristina
 
 
 def _pg_dow(d: date) -> int:
@@ -44,7 +45,7 @@ def _service_type(service_id) -> int | None:
 
 def slot_rule(professional_id: int, service_id) -> tuple[int, int]:
     """Retorna (duração_min, minuto_âncora) do slot para o profissional/serviço."""
-    if professional_id == ISADORA_ID:
+    if professional_id in HOURLY_IDS:
         return 60, 0
     st = _service_type(service_id)
     if st == 1:            # consulta
