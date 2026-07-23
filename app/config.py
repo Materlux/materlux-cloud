@@ -26,6 +26,10 @@ class Settings:
     META_TOKEN: str = os.getenv("META_TOKEN", "")
     META_PHONE_ID: str = os.getenv("META_PHONE_ID", "")
 
+    # Token que protege os endpoints de tarefas agendadas (Cloud Scheduler).
+    # Sem valor, os endpoints /tasks/* ficam desligados (503) por segurança.
+    TASKS_TOKEN: str = os.getenv("TASKS_TOKEN", "")
+
     # Agenda / regras de negócio
     SLOT_MINUTES: int = int(os.getenv("SLOT_MINUTES", "30"))
     CLINIC_TZ: str = os.getenv("CLINIC_TZ", "America/Sao_Paulo")

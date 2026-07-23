@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from .config import get_settings
 from . import db, security
-from .routers import auth, appointments, patients, evolutions, whatsapp, partos
+from .routers import auth, appointments, patients, evolutions, whatsapp, partos, tasks
 
 _s = get_settings()
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -26,6 +26,7 @@ app.include_router(patients.router)
 app.include_router(evolutions.router)
 app.include_router(whatsapp.router)
 app.include_router(partos.router)
+app.include_router(tasks.router)
 
 
 @app.get("/health")

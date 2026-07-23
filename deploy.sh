@@ -37,7 +37,7 @@ gcloud run deploy "$SERVICE" \
   --region "$REGION" \
   --allow-unauthenticated \
   --add-cloudsql-instances "$INSTANCE" \
-  --set-secrets "DATABASE_URL=materlux-database-url:latest,JWT_SECRET=materlux-jwt-secret:latest,GEMINI_API_KEY=materlux-gemini-key:latest,ZAPI_INSTANCE=materlux-zapi-instance:latest,ZAPI_TOKEN=materlux-zapi-token:latest,ZAPI_CLIENT_TOKEN=materlux-zapi-client-token:latest" \
+  --set-secrets "DATABASE_URL=materlux-database-url:latest,JWT_SECRET=materlux-jwt-secret:latest,GEMINI_API_KEY=materlux-gemini-key:latest,ZAPI_INSTANCE=materlux-zapi-instance:latest,ZAPI_TOKEN=materlux-zapi-token:latest,ZAPI_CLIENT_TOKEN=materlux-zapi-client-token:latest,TASKS_TOKEN=materlux-tasks-token:latest" \
   --set-env-vars "WA_PROVIDER=zapi,WA_VERIFY_TOKEN=materlux-verify,CLINIC_TZ=America/Sao_Paulo,COOKIE_SECURE=true,GEMINI_MODEL=gemini-2.5-flash"
 
 echo ""

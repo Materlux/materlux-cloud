@@ -145,6 +145,12 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
 - **Partos** (`medical.partos`, migração 005): `POST/GET/PATCH/DELETE /api/partos` —
   registro com paciente, profissional, `valor_pago`, `data_pagamento`, `observacoes`.
   Aba própria no painel; partos sem `data_pagamento` aparecem em qualquer período.
+- `POST /tasks/lembretes` (**Cloud Scheduler**, protegido por header
+  `X-Tasks-Token` = env `TASKS_TOKEN`; sem a env, responde 503): envia o lembrete
+  da véspera via `send_reply` (Z-API) para consultas de amanhã com status ativo
+  (1,2) e `lembrete_enviado_em` nulo; marca a coluna ao enviar (idempotente).
+  Job diário sugerido às 18:00 America/Sao_Paulo. Telefone é normalizado para
+  DDI 55. **Novo secret a injetar no Cloud Run:** `TASKS_TOKEN`.
 - `POST /webhook/whatsapp` (Z-API). **Transbordo humano:** se
   `conversations.sessions.atendimento_status = 'humano'`, o webhook NÃO chama o
   Gemini (silêncio; só grava a mensagem no histórico). Controle no painel (aba
@@ -202,7 +208,8 @@ app/
     appointments.py   # agenda, criar/editar/cancelar, financeiro, relatórios
     patients.py       # busca, cadastro, histórico
     partos.py         # registro de partos (valor/data de pagamento → relatórios)
-migrations/           # 001..005 (004 = transbordo humano; 005 = medical.partos)
+    tasks.py          # tarefas do Cloud Scheduler (lembrete de 24h via Z-API)
+migrations/           # 001..006 (005 = partos; 006 = lembrete_enviado_em)
 deploy.sh             # crane push + gcloud run deploy
 REQUISITOS-V2.md      # especificação da v2
 V2-STATUS.md          # checklist de publicação da v2
