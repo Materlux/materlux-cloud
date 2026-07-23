@@ -110,6 +110,21 @@ def wa_conversas(user: dict = Depends(current_user)):
     return out
 
 
+@router.get("/api/wa/alerta")
+def wa_alerta(user: dict = Depends(current_user)):
+    """Resumo leve para o alerta da aba WhatsApp: quantas conversas estão em
+    atendimento humano e quando foi a pausa mais recente (respeita as 12h)."""
+    row = db.query(
+        "SELECT count(*) AS n, max(pausado_em) AS ultimo "
+        "FROM conversations.sessions "
+        "WHERE atendimento_status = 'humano' "
+        "AND (pausado_em IS NULL OR pausado_em > now() - interval '12 hours')",
+        one=True,
+    )
+    return {"humano": row["n"],
+            "ultimo": row["ultimo"].isoformat() if row["ultimo"] else None}
+
+
 @router.post("/api/wa/conversas/{phone}/status")
 def wa_set_status(phone: str, body: WaStatusIn,
                   user: dict = Depends(current_user)):

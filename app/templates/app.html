@@ -41,6 +41,9 @@
     padding:10px 12px;margin-top:12px;font-size:13px;line-height:1.5}
   .calbtn{border:0;background:#f2e9e7;border-radius:8px;padding:8px 9px;cursor:pointer;
     font-size:14px;margin-left:4px;vertical-align:bottom}
+  nav button.blink{background:var(--rose);color:#fff;font-weight:600;
+    animation:waPulse 1.1s ease-in-out infinite}
+  @keyframes waPulse{0%,100%{opacity:1}50%{opacity:.5}}
 </style></head>
 <body>
 <header>
@@ -298,12 +301,13 @@ async function boot(){
   $('pt-start').value=todayBr(); $('pt-end').value=todayBr();
   if(ME.professional_id) $('ag-prof').value=ME.professional_id;
   loadAgenda(); nvServices(); rpFormas();
+  waPoll(); setInterval(waPoll,15000);
 }
 function tab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
   ['agenda','novo','cadastro','historico','editar','cancelamentos','whats','partos','pront','relatorios']
     .forEach(s=>$(s).classList.toggle('hide',s!==t));
-  if(t==='whats')loadWa();
+  if(t==='whats'){loadWa();waAck();}
   if(t==='partos')loadPartos();
 }
 async function logout(){await fetch('/api/logout',{method:'POST'});location.href='/login';}
@@ -386,7 +390,27 @@ async function waToggle(numero,novo){
   const r=await fetch(`/api/wa/conversas/${numero}/status`,{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({status:novo})});
   if(!r.ok)alert('Erro: '+(await r.json()).detail);
-  loadWa();
+  loadWa(); waAck();
+}
+/* alerta na aba: pisca quando uma conversa NOVA entra em atendimento humano */
+let WA_SEEN=localStorage.getItem('waSeen')||'';
+function waTabBtn(){return document.querySelector('nav button[data-tab="whats"]');}
+async function waPoll(){
+  try{
+    const j=await (await fetch('/api/wa/alerta')).json();
+    const novo=j.humano>0&&j.ultimo&&j.ultimo>WA_SEEN;
+    if(novo&&!$('whats').classList.contains('hide')){
+      loadWa(); waAck(); return;      // já está olhando a aba: atualiza e dá por visto
+    }
+    waTabBtn().classList.toggle('blink',novo);
+  }catch(e){/* rede instável não pode quebrar o painel */}
+}
+async function waAck(){
+  try{
+    const j=await (await fetch('/api/wa/alerta')).json();
+    if(j.ultimo){WA_SEEN=j.ultimo;localStorage.setItem('waSeen',WA_SEEN);}
+  }catch(e){}
+  waTabBtn().classList.remove('blink');
 }
 
 /* ---------- NOVO AGENDAMENTO ---------- */
