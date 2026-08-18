@@ -30,15 +30,6 @@ class Settings:
     # Sem valor, os endpoints /tasks/* ficam desligados (503) por segurança.
     TASKS_TOKEN: str = os.getenv("TASKS_TOKEN", "")
 
-    # Plataforma "Fertilidade Sem Segredos" (site fertilidadesemsegredos.com.br,
-    # servido pelo mesmo Cloud Run, roteado por Host).
-    GEOCODING_API_KEY: str = os.getenv("GEOCODING_API_KEY", "")
-    FERTILIDADE_WHATSAPP: str = os.getenv("FERTILIDADE_WHATSAPP", "552732018855")
-    FERTILIDADE_RAIO_KM: int = int(os.getenv("FERTILIDADE_RAIO_KM", "100"))
-    # Host(s) que devem servir a landing pública no "/" (separados por vírgula).
-    FERTILIDADE_HOSTS: str = os.getenv(
-        "FERTILIDADE_HOSTS", "fertilidadesemsegredos.com.br")
-
     # Agenda / regras de negócio
     SLOT_MINUTES: int = int(os.getenv("SLOT_MINUTES", "30"))
     CLINIC_TZ: str = os.getenv("CLINIC_TZ", "America/Sao_Paulo")

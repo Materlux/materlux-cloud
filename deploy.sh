@@ -32,9 +32,6 @@ docker save "$IMG" -o /tmp/materlux-img.tar
 /tmp/crane push /tmp/materlux-img.tar "$IMG"
 
 # --- Deploy no Cloud Run ------------------------------------------------------
-# NOTA: quando a Plataforma Fertilidade for ao ar, criar o secret
-# `materlux-geocoding-key` no Secret Manager e devolver ao final da linha
-# --set-secrets: `,GEOCODING_API_KEY=materlux-geocoding-key:latest`
 gcloud run deploy "$SERVICE" \
   --image "$IMG" \
   --region "$REGION" \
