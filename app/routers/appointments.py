@@ -246,8 +246,12 @@ def revenue(start: str, end: str, forma_pagamento: str | None = None,
     d0 = datetime.combine(date.fromisoformat(start), datetime.min.time(), tzinfo=TZ)
     d1 = datetime.combine(date.fromisoformat(end), datetime.min.time(), tzinfo=TZ) \
         + timedelta(days=1)
-    where = "a.start_time >= %s AND a.start_time < %s AND a.valor_pago IS NOT NULL"
-    params: list = [d0, d1]
+    # exclui cancelados/expirados (3,4,5), igual à agenda faz — senão um agendamento
+    # cancelado que ainda tem valor_pago lançado infla o relatório (no_show=7 segue
+    # contando: cobrança de falta é receita legítima).
+    where = ("a.start_time >= %s AND a.start_time < %s AND a.valor_pago IS NOT NULL "
+             "AND a.status_id <> ALL(%s)")
+    params: list = [d0, d1, _CANCELLED_STATUSES]
     if forma_pagamento:
         where += " AND a.forma_pagamento = %s"
         params.append(forma_pagamento)

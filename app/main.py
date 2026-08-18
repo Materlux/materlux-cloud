@@ -6,7 +6,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from .config import get_settings
 from . import db, security
-from .routers import auth, appointments, patients, evolutions, whatsapp, partos, tasks
+from .routers import (auth, appointments, patients, evolutions, whatsapp,
+                      partos, tasks, fertilidade)
 
 _s = get_settings()
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -27,6 +28,17 @@ app.include_router(evolutions.router)
 app.include_router(whatsapp.router)
 app.include_router(partos.router)
 app.include_router(tasks.router)
+app.include_router(fertilidade.router)
+
+
+_FERTILIDADE_HOSTS = {h.strip().lower()
+                      for h in _s.FERTILIDADE_HOSTS.split(",") if h.strip()}
+
+
+def _is_fertilidade_host(request: Request) -> bool:
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    host = host[4:] if host.startswith("www.") else host
+    return host in _FERTILIDADE_HOSTS
 
 
 @app.get("/health")
@@ -85,9 +97,31 @@ def health_deep():
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    # No domínio da plataforma do livro, a raiz é a landing pública de matching.
+    if _is_fertilidade_host(request):
+        return TEMPLATES.TemplateResponse(
+            "fertilidade.html",
+            {"request": request, "whatsapp": _s.FERTILIDADE_WHATSAPP,
+             "raio_km": _s.FERTILIDADE_RAIO_KM})
     if request.cookies.get(security.COOKIE_NAME):
         return RedirectResponse("/app")
     return RedirectResponse("/login")
+
+
+@app.get("/fertilidade", response_class=HTMLResponse)
+def fertilidade_page(request: Request):
+    """Landing pública acessível por caminho (útil antes do domínio ser mapeado)."""
+    return TEMPLATES.TemplateResponse(
+        "fertilidade.html",
+        {"request": request, "whatsapp": _s.FERTILIDADE_WHATSAPP,
+         "raio_km": _s.FERTILIDADE_RAIO_KM})
+
+
+@app.get("/fertilidade/admin", response_class=HTMLResponse)
+def fertilidade_admin_page(request: Request):
+    if not request.cookies.get(security.COOKIE_NAME):
+        return RedirectResponse("/login")
+    return TEMPLATES.TemplateResponse("fertilidade_admin.html", {"request": request})
 
 
 @app.get("/login", response_class=HTMLResponse)
