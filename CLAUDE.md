@@ -108,6 +108,11 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
 
 - **psycopg 3:** para "não está nesta lista" use **`coluna <> ALL(%s)`** com uma **lista**
   Python — **não** use `NOT IN %s` (dá SyntaxError de placeholder).
+- **Conexão morta no pool (Cloud Run ocioso + Cloud SQL):** se a Malu "parar de
+  responder" com `OperationalError: server closed the connection unexpectedly` na
+  primeira query da requisição, é conexão ociosa que o Cloud SQL fechou. O pool em
+  `app/db.py` já trata com `check=ConnectionPool.check_connection` (valida/descarta
+  antes de entregar) + `max_lifetime`/`max_idle`. Não remover esses parâmetros.
 - **Sequências defasadas (banco restaurado):** tabelas repovoadas com ids explícitos
   no restore (`medical.professionals`, possivelmente `medical.services`,
   `patients.records`) têm a sequência do `id` atrás do `max(id)` — um `INSERT` sem id

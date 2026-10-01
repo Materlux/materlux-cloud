@@ -15,6 +15,13 @@ _pool = ConnectionPool(
     kwargs={"row_factory": dict_row},
     min_size=1,
     max_size=8,
+    # Cloud Run fica ocioso e o Cloud SQL fecha conexões paradas; sem isso, a
+    # primeira query depois da ociosidade pegava uma conexão morta e estourava
+    # ("server closed the connection unexpectedly"). check= valida e descarta a
+    # conexão morta ANTES de entregar; max_lifetime recicla antes de ela morrer.
+    check=ConnectionPool.check_connection,
+    max_lifetime=1800,   # recicla cada conexão a cada 30 min
+    max_idle=300,        # fecha conexões ociosas após 5 min (até min_size)
     open=False,
 )
 

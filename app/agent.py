@@ -599,11 +599,15 @@ def process_message(sender_number: str, text: str) -> str:
     history.append({"role": "model", "text": final_text})
     _save_history(sender_number, history)
 
-    # recuperação de agendamento não concluído: limpa se concluiu/encerrou,
-    # senão marca/renova a pendência (candidata ao follow-up de ~15 min)
-    if booking_done or encerrou:
-        limpar_agendamento_pendente(sender_number)
-    else:
-        tocar_agendamento_pendente(sender_number, booking_touched)
+    # recuperação de agendamento não concluído: limpa se concluiu/encerrou, senão
+    # marca/renova a pendência (candidata ao follow-up de ~15 min). É bookkeeping
+    # SECUNDÁRIO — jamais pode quebrar a resposta à paciente.
+    try:
+        if booking_done or encerrou:
+            limpar_agendamento_pendente(sender_number)
+        else:
+            tocar_agendamento_pendente(sender_number, booking_touched)
+    except Exception as e:  # noqa
+        print(f"[agent] follow-up bookkeeping falhou (ignorado): {e}", flush=True)
 
     return final_text or "Desculpe, pode repetir?"
