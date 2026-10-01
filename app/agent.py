@@ -369,6 +369,36 @@ def transferir_para_humano(sender_number: str) -> dict:
                         "atendimento é resolvido por aqui; não oriente a ligar.")}
 
 
+# ------------------------------------------- recuperação de agendamento pendente
+def tocar_agendamento_pendente(sender_number: str, iniciar: bool):
+    """Marca/renova 'agendamento em andamento que não concluiu' nesta conversa.
+    Atualiza o relógio para agora (último contato da paciente) se já estava
+    pendente OU se houve tentativa de agendar nesta rodada. NÃO mexe em
+    followup_enviado_em (um follow-up por episódio)."""
+    db.query(
+        "UPDATE conversations.sessions SET agendamento_pendente_desde = now() "
+        "WHERE sender_number = %s AND (agendamento_pendente_desde IS NOT NULL OR %s)",
+        (sender_number, iniciar), commit=True,
+    )
+
+
+def limpar_agendamento_pendente(sender_number: str):
+    """Agendamento concluído/cancelado ou transbordo: zera o estado de pendência."""
+    db.query(
+        "UPDATE conversations.sessions SET agendamento_pendente_desde = NULL, "
+        "followup_enviado_em = NULL WHERE sender_number = %s",
+        (sender_number,), commit=True,
+    )
+
+
+def log_model_message(sender_number: str, text: str):
+    """Guarda no histórico uma mensagem enviada em nome da Malu por um job
+    (ex.: follow-up de agendamento não concluído), para manter o contexto."""
+    history = _load_history(sender_number)
+    history.append({"role": "model", "text": text})
+    _save_history(sender_number, history)
+
+
 # ---------------------------------------------------------------- loop do agente
 _TOOLS_SPEC = None
 
@@ -521,6 +551,9 @@ def process_message(sender_number: str, text: str) -> str:
 
     final_text = ""
     nudged = False
+    booking_touched = False   # consultou horários ou tentou criar nesta conversa
+    booking_done = False      # criar_agendamento devolveu ok
+    encerrou = False          # transbordo humano ou cancelamento concluído
     for _ in range(6):  # limita as rodadas de tool-calling
         resp = client.models.generate_content(
             model=_s.GEMINI_MODEL, contents=contents, config=cfg)
@@ -550,6 +583,14 @@ def process_message(sender_number: str, text: str) -> str:
                 result = _DISPATCH[fc.name](args, sender_number)
             except Exception as e:  # noqa
                 result = {"erro": str(e)}
+            _ok = isinstance(result, dict) and result.get("ok")
+            if fc.name in ("consultar_horarios", "criar_agendamento"):
+                booking_touched = True
+            if fc.name == "criar_agendamento" and _ok:
+                booking_done = True
+            if fc.name == "transferir_para_humano" or (
+                    fc.name == "cancelar_agendamento" and _ok):
+                encerrou = True
             tool_parts.append(types.Part(function_response=types.FunctionResponse(
                 name=fc.name, response={"result": result})))
         contents.append(types.Content(role="tool", parts=tool_parts))
@@ -557,4 +598,12 @@ def process_message(sender_number: str, text: str) -> str:
     history.append({"role": "user", "text": text})
     history.append({"role": "model", "text": final_text})
     _save_history(sender_number, history)
+
+    # recuperação de agendamento não concluído: limpa se concluiu/encerrou,
+    # senão marca/renova a pendência (candidata ao follow-up de ~15 min)
+    if booking_done or encerrou:
+        limpar_agendamento_pendente(sender_number)
+    else:
+        tocar_agendamento_pendente(sender_number, booking_touched)
+
     return final_text or "Desculpe, pode repetir?"

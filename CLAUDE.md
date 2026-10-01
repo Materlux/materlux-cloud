@@ -161,6 +161,13 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
   (1,2) e `lembrete_enviado_em` nulo; marca a coluna ao enviar (idempotente).
   Job diário sugerido às 18:00 America/Sao_Paulo. Telefone é normalizado para
   DDI 55. **Novo secret a injetar no Cloud Run:** `TASKS_TOKEN`.
+- `POST /tasks/followup-agendamento` (**Cloud Scheduler**, mesmo `X-Tasks-Token`):
+  reenvia UMA vez, após ~15 min de silêncio, às conversas que começaram um
+  agendamento e não concluíram (`conversations.sessions.agendamento_pendente_desde`
+  entre 15 min e 24h, `followup_enviado_em` nulo, `atendimento_status='bot'`). O
+  `process_message` marca/limpa a pendência (migração 008); conclusão/cancelamento/
+  transbordo limpam. Job sugerido a cada ~5 min. Complementa a regra da política de
+  sempre dar "última palavra" (confirmado ou não concluído).
 - `POST /webhook/whatsapp` (Z-API). **Transbordo humano:** se
   `conversations.sessions.atendimento_status = 'humano'`, o webhook NÃO chama o
   Gemini (silêncio; só grava a mensagem no histórico). Controle no painel (aba
@@ -219,7 +226,7 @@ app/
     patients.py       # busca, cadastro, histórico
     partos.py         # registro de partos (valor/data de pagamento → relatórios)
     tasks.py          # tarefas do Cloud Scheduler (lembrete de 24h via Z-API)
-migrations/           # 001..006 (005 = partos; 006 = lembrete_enviado_em)
+migrations/           # 001-006, 008 (007 era fertilidade→repo próprio; 008=followup)
 deploy.sh             # crane push + gcloud run deploy
 REQUISITOS-V2.md      # especificação da v2
 V2-STATUS.md          # checklist de publicação da v2

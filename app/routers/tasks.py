@@ -5,13 +5,15 @@ Sem TASKS_TOKEN configurado, os endpoints ficam desligados (503).
 
 - POST /tasks/lembretes : envia o lembrete da véspera às pacientes com consulta
   amanhã (status ativo, ainda sem lembrete). Idempotente: grava lembrete_enviado_em.
+- POST /tasks/followup-agendamento : reenvia uma vez, após ~15 min de silêncio, às
+  conversas que começaram um agendamento e não concluíram. Idempotente por episódio.
 """
 import hmac
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Header, HTTPException
 from ..config import get_settings
-from .. import db
+from .. import db, agent
 from .whatsapp import send_reply
 
 router = APIRouter()
@@ -95,4 +97,49 @@ def enviar_lembretes(x_tasks_token: str | None = Header(default=None)):
     resumo = {"data_alvo": amanha.isoformat(), "candidatos": len(rows),
               "enviados": enviados, "falhas": falhas, "sem_telefone": sem_fone}
     print(f"[lembrete] {resumo}", flush=True)
+    return resumo
+
+
+_FOLLOWUP_MIN = 15      # minutos de silêncio antes de cutucar
+_FOLLOWUP_MAX_H = 24    # não cutuca pendência mais velha que isso
+
+_FOLLOWUP_MSG = (
+    "Oi! 💙 Vi que começamos o seu agendamento aqui na Materlux, mas ele ainda não "
+    "foi concluído. Se você ainda quiser agendar, é só me enviar os dados que "
+    "faltaram (como o nome completo e o CPF) que eu finalizo pra você agora. "
+    "Fico à disposição!")
+
+
+@router.post("/tasks/followup-agendamento")
+def followup_agendamento(x_tasks_token: str | None = Header(default=None)):
+    """Reenvia UMA vez, após ~15 min de silêncio, às conversas que começaram um
+    agendamento e não concluíram — e que não foram passadas para a recepção."""
+    _auth(x_tasks_token)
+    agora = datetime.now(TZ)
+    rows = db.query(
+        "SELECT sender_number FROM conversations.sessions "
+        "WHERE agendamento_pendente_desde IS NOT NULL "
+        "AND followup_enviado_em IS NULL "
+        "AND atendimento_status = 'bot' "
+        "AND agendamento_pendente_desde <= %s "
+        "AND agendamento_pendente_desde >= %s",
+        (agora - timedelta(minutes=_FOLLOWUP_MIN),
+         agora - timedelta(hours=_FOLLOWUP_MAX_H)),
+    )
+
+    enviados, falhas = 0, 0
+    for r in rows:
+        fone = r["sender_number"]
+        try:
+            send_reply(fone, _FOLLOWUP_MSG)
+            db.query("UPDATE conversations.sessions SET followup_enviado_em = now() "
+                     "WHERE sender_number = %s", (fone,), commit=True)
+            agent.log_model_message(fone, _FOLLOWUP_MSG)
+            enviados += 1
+        except Exception as e:  # noqa
+            print(f"[followup] falha fone={fone}: {e}", flush=True)
+            falhas += 1
+
+    resumo = {"candidatos": len(rows), "enviados": enviados, "falhas": falhas}
+    print(f"[followup] {resumo}", flush=True)
     return resumo
