@@ -365,19 +365,23 @@ def transferir_para_humano(sender_number: str) -> dict:
     set_atendimento_status(sender_number, "humano", "bot")
     return {"ok": True,
             "detalhe": ("Transferido: a recepção continuará a conversa neste mesmo "
-                        "WhatsApp. Despeça-se avisando isso à paciente (e que ela "
-                        "também pode ligar para 27999949612, 8h às 17h).")}
+                        "WhatsApp. Despeça-se avisando isso à paciente — todo "
+                        "atendimento é resolvido por aqui; não oriente a ligar.")}
 
 
 # ---------------------------------------------------------------- loop do agente
 _TOOLS_SPEC = None
 
-# resposta que promete agir "depois" — o modelo não tem 'depois'; detectamos e
-# forçamos mais uma rodada para ele executar a ferramenta de fato
+# resposta que NÃO atende a paciente: promessa de agir "depois" ("aguarde",
+# "vou verificar") ou enchimento de estado interno ("estou pensando", "silêncio").
+# O modelo não tem 'depois' e não deve narrar o que faz por dentro — detectamos e
+# forçamos mais uma rodada para ele responder de verdade.
 _PROMESSA = re.compile(
-    r"aguarde|s[oó] um (momento|instante|minutinho)|um momento|"
+    r"aguarde|s[oó] um (momento|instante|minutinho)|um (momento|instante)|"
     r"enquanto (eu )?(consulto|verifico|confiro)|"
-    r"vou (verificar|consultar|checar|conferir)", re.IGNORECASE)
+    r"vou (verificar|consultar|checar|conferir)|"
+    r"estou pensando|pensando\.\.\.|deixa eu pensar|sil[êe]ncio|processando",
+    re.IGNORECASE)
 
 
 def _build_tools():
@@ -430,7 +434,7 @@ def _build_tools():
         types.FunctionDeclaration(
             name="transferir_para_humano",
             description=("Transfere a conversa para a recepção (atendente humana): "
-                         "você fica em silêncio e a recepção responde neste mesmo "
+                         "você para de responder e a recepção assume neste mesmo "
                          "WhatsApp. Use quando a paciente pedir para falar com uma "
                          "pessoa, houver reclamação, ou o assunto fugir do que você "
                          "resolve com segurança."),
@@ -526,14 +530,16 @@ def process_message(sender_number: str, text: str) -> str:
         if not calls:
             final_text = resp.text or ""
             if not nudged and _PROMESSA.search(final_text):
-                # prometeu agir e parou: devolve a bola uma vez para ele executar
+                # resposta de espera/pensamento sem conteúdo: devolve a bola uma vez
                 nudged = True
-                print(f"[agent] nudge: resposta prometia acao sem ferramenta", flush=True)
+                print("[agent] nudge: resposta de espera/pensamento sem conteudo", flush=True)
                 contents.append(types.Content(role="user", parts=[types.Part(text=(
-                    "[sistema] Você prometeu consultar/verificar algo, mas terminou a "
-                    "resposta sem chamar ferramenta — a paciente ficaria esperando para "
-                    "sempre. Execute a ferramenta necessária AGORA e responda com o "
-                    "resultado final, sem pedir para aguardar."))]))
+                    "[sistema] Sua última resposta não atendeu a paciente — foi só um "
+                    "texto de espera ou de pensamento (ex.: 'aguarde', 'estou pensando', "
+                    "'silêncio'). Isso nunca deve ser enviado. Responda AGORA com "
+                    "conteúdo real: a informação pedida, o resultado de uma ferramenta "
+                    "(chame-a se precisar) ou uma pergunta objetiva — sem mensagens de "
+                    "espera nem de estado interno."))]))
                 continue
             break
         tool_parts = []
