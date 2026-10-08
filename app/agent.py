@@ -82,6 +82,18 @@ def listar_servicos(professional_id: int) -> list[dict]:
     return [{"service_id": r["id"], "nome": r["name"], "preco": float(r["price"])} for r in rows]
 
 
+def validar_cpf(cpf: str) -> dict:
+    """Valida um CPF isolado (antes de ter o nome). O modelo NÃO sabe calcular os
+    dígitos verificadores — só esta ferramenta decide se o CPF é válido."""
+    if _valida_cpf(cpf):
+        return {"ok": True, "detalhe": "CPF válido. Siga com o agendamento."}
+    n_dig = sum(c.isdigit() for c in (cpf or ""))
+    return {"ok": False, "motivo": "cpf_invalido",
+            "diagnostico": f"{n_dig} digitos recebidos (esperado 11)",
+            "detalhe": ("O CPF não confere (dígitos verificadores). Peça com gentileza "
+                        "para a paciente conferir e enviar de novo.")}
+
+
 def consultar_horarios(professional_id: int, service_id: int, data_iso: str) -> dict:
     d = date.fromisoformat(data_iso)
     slots = scheduling.available_slots(professional_id, service_id, d)
@@ -96,7 +108,9 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
                       nome_servico: str = "") -> dict:
     cpf_digits = _valida_cpf(cpf)
     if not cpf_digits:
+        n_dig = sum(c.isdigit() for c in (cpf or ""))
         return {"ok": False, "motivo": "cpf_invalido",
+                "diagnostico": f"{n_dig} digitos recebidos (esperado 11)",
                 "detalhe": ("O CPF informado não é válido. Peça para a paciente "
                             "conferir e enviar novamente os 11 dígitos.")}
     # trava: o serviço tem que ser da profissional escolhida (o modelo já confundiu
@@ -421,7 +435,7 @@ def _log_tool(name: str, args: dict, result, sender_number: str):
         safe_args = {k: v for k, v in args.items() if k not in ("cpf", "nome_paciente")}
         if isinstance(result, dict):
             res = {k: result[k] for k in (
-                "ok", "motivo", "motivo_recusa", "erro", "data", "quando",
+                "ok", "motivo", "motivo_recusa", "diagnostico", "erro", "data", "quando",
                 "ja_estava_cancelado") if k in result}
             if "horarios" in result:
                 hs = result["horarios"]
@@ -486,6 +500,18 @@ def _build_tools():
                           "nome_paciente", "cpf", "nome_servico"]),
         ),
         types.FunctionDeclaration(
+            name="validar_cpf",
+            description=("Valida o CPF informado pela paciente. SEMPRE chame esta "
+                         "ferramenta assim que a paciente enviar um CPF, mesmo que "
+                         "ainda falte o nome. Você NUNCA deve dizer que um CPF é "
+                         "válido ou inválido por conta própria: só esta ferramenta "
+                         "(ou criar_agendamento) decide."),
+            parameters=types.Schema(type="OBJECT", properties={
+                "cpf": types.Schema(type="STRING",
+                                    description="CPF como a paciente escreveu")},
+                required=["cpf"]),
+        ),
+        types.FunctionDeclaration(
             name="transferir_para_humano",
             description=("Transfere a conversa para a recepção (atendente humana): "
                          "você para de responder e a recepção assume neste mesmo "
@@ -525,6 +551,7 @@ _DISPATCH = {
     "criar_agendamento": lambda a, s: criar_agendamento(
         s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"],
         a["nome_paciente"], a.get("cpf", ""), a.get("nome_servico", "")),
+    "validar_cpf": lambda a, s: validar_cpf(a.get("cpf", "")),
     "transferir_para_humano": lambda a, s: transferir_para_humano(s),
     "listar_agendamentos_futuros": lambda a, s: listar_agendamentos_futuros(s),
     "cancelar_agendamento": lambda a, s: cancelar_agendamento(
