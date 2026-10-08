@@ -119,6 +119,11 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
   explícito dá `duplicate key ... _pkey`. Conserto:
   `SELECT setval(pg_get_serial_sequence('schema.tabela','id'), (SELECT max(id) FROM schema.tabela));`
   (idempotente). Foi preciso na `medical.professionals` ao cadastrar a Dra. Cristina.
+- **Diagnóstico por logs:** cada ferramenta da Malu loga `[agent] tel=..XXXX tool=... args=... -> resultado`
+  (`_log_tool` em `app/agent.py`; sem CPF/nome, telefone só com 4 últimos dígitos). Para rastrear uma
+  paciente: `gcloud run services logs read materlux-api --region southamerica-east1 --limit 2000 | grep "tel=..XXXX"`.
+  No Cloud Shell novo, antes: `gcloud config set project mata-da-praia-workflows`. O histórico completo
+  da conversa fica em `conversations.state_history` (Cloud SQL Studio).
 - **Slots livres:** `_FREE_STATUS = (3, 4, 5)` — cancelados/expirados **não** ocupam a
   agenda. Por isso um agendamento cancelado (status 4) libera o horário.
 - **Slots variáveis** (`app/scheduling.py`, função `slot_rule(professional_id, service_id)`):

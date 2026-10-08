@@ -414,6 +414,30 @@ _PROMESSA = re.compile(
     re.IGNORECASE)
 
 
+def _log_tool(name: str, args: dict, result, sender_number: str):
+    """Log de diagnóstico de cada chamada de ferramenta: pedido + resultado, sem
+    dados pessoais (CPF e nome ficam de fora; telefone só os 4 últimos dígitos)."""
+    try:
+        safe_args = {k: v for k, v in args.items() if k not in ("cpf", "nome_paciente")}
+        if isinstance(result, dict):
+            res = {k: result[k] for k in (
+                "ok", "motivo", "motivo_recusa", "erro", "data", "quando",
+                "ja_estava_cancelado") if k in result}
+            if "horarios" in result:
+                hs = result["horarios"]
+                res["horarios"] = f"{len(hs)}: {hs[:12]}"
+            if "proximas_datas" in result:
+                res["proximas_datas"] = [d.get("date") for d in result["proximas_datas"]]
+        elif isinstance(result, list):
+            res = f"{len(result)} item(ns)"
+        else:
+            res = str(result)[:200]
+        print(f"[agent] tel=..{(sender_number or '')[-4:]} tool={name} "
+              f"args={safe_args} -> {res}", flush=True)
+    except Exception as e:  # noqa — log nunca pode quebrar o atendimento
+        print(f"[agent] tool={name} (falha ao logar: {e})", flush=True)
+
+
 def _build_tools():
     from google.genai import types
     return [types.Tool(function_declarations=[
@@ -579,10 +603,10 @@ def process_message(sender_number: str, text: str) -> str:
         for fc in calls:
             args = dict(fc.args) if fc.args else {}
             try:
-                print(f"[agent] tool={fc.name} args={args}", flush=True)
                 result = _DISPATCH[fc.name](args, sender_number)
             except Exception as e:  # noqa
                 result = {"erro": str(e)}
+            _log_tool(fc.name, args, result, sender_number)
             _ok = isinstance(result, dict) and result.get("ok")
             if fc.name in ("consultar_horarios", "criar_agendamento"):
                 booking_touched = True
