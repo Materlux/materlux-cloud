@@ -101,13 +101,14 @@ def enviar_lembretes(x_tasks_token: str | None = Header(default=None)):
 
 
 _FOLLOWUP_MIN = 15      # minutos de silêncio antes de cutucar
-_FOLLOWUP_MAX_H = 24    # não cutuca pendência mais velha que isso
+_FOLLOWUP_MAX_H = agent.IDLE_RESET_HOURS  # depois disso a conversa é esquecida
 
 _FOLLOWUP_MSG = (
     "Oi! 💙 Vi que começamos o seu agendamento aqui na Materlux, mas ele ainda não "
     "foi concluído. Se você ainda quiser agendar, é só me enviar os dados que "
     "faltaram (como o nome completo e o CPF) que eu finalizo pra você agora. "
-    "Fico à disposição!")
+    f"Guardo esta conversa por {agent.IDLE_RESET_HOURS} horas; depois disso, se "
+    "ainda quiser agendar, recomeçamos do início. Fico à disposição!")
 
 
 @router.post("/tasks/followup-agendamento")

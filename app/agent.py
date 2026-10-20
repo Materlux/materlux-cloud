@@ -301,9 +301,16 @@ def _get_or_create_patient(sender_number: str, nome: str, cpf: str) -> int:
 
 
 # ---------------------------------------------------------------- sessão/estado
-def _load_history(sender_number: str) -> list[dict]:
+# Inatividade que "esquece" a conversa: passado esse tempo sem nenhuma mensagem, a
+# Malu recomeça do zero (as linhas antigas continuam no banco, só não são mais
+# carregadas). A identificação da paciente (patients.*) não é afetada.
+IDLE_RESET_HOURS = 24
+
+
+def _load_history_raw(sender_number: str) -> tuple[list[dict], datetime | None]:
+    """Último histórico gravado + quando foi gravado (sem aplicar expiração)."""
     row = db.query(
-        "SELECT context_data FROM conversations.state_history "
+        "SELECT context_data, created_at FROM conversations.state_history "
         "WHERE sender_number = %s ORDER BY created_at DESC LIMIT 1",
         (sender_number,), one=True,
     )
@@ -311,8 +318,22 @@ def _load_history(sender_number: str) -> list[dict]:
         data = row["context_data"]
         if isinstance(data, str):
             data = json.loads(data)
-        return data.get("history", [])
-    return []
+        return data.get("history", []), row.get("created_at")
+    return [], None
+
+
+def _expirou(last_at: datetime | None) -> bool:
+    if not last_at:
+        return False
+    if last_at.tzinfo is None:
+        last_at = last_at.replace(tzinfo=TZ)
+    return datetime.now(TZ) - last_at > timedelta(hours=IDLE_RESET_HOURS)
+
+
+def _load_history(sender_number: str) -> list[dict]:
+    """Histórico da conversa; vazio se ficou parada por mais de IDLE_RESET_HOURS."""
+    history, last_at = _load_history_raw(sender_number)
+    return [] if _expirou(last_at) else history
 
 
 def _save_history(sender_number: str, history: list[dict]):
@@ -606,7 +627,37 @@ def process_message(sender_number: str, text: str) -> str:
             "em seguida — não existe 'em seguida'; faça agora ou peça a informação "
             "que falta à paciente.")
 
-    history = _load_history(sender_number)
+    history, last_at = _load_history_raw(sender_number)
+    if _expirou(last_at):
+        # conversa parada há mais de IDLE_RESET_HOURS: esquece o contexto e recomeça.
+        # Se havia agendamento começado e não concluído, a Malu avisa a paciente.
+        st = db.query("SELECT agendamento_pendente_desde FROM conversations.sessions "
+                      "WHERE sender_number = %s", (sender_number,), one=True)
+        tinha_pendente = bool(st and st["agendamento_pendente_desde"])
+        history = []
+        try:
+            limpar_agendamento_pendente(sender_number)
+        except Exception as e:  # noqa
+            print(f"[agent] limpar pendencia na expiracao falhou (ignorado): {e}", flush=True)
+        print(f"[agent] tel=..{sender_number[-4:]} conversa expirada por inatividade "
+              f"(>{IDLE_RESET_HOURS}h) pendente={tinha_pendente}", flush=True)
+        if tinha_pendente:
+            sys += (f"\n\n[Contexto técnico] A conversa anterior com esta paciente ficou "
+                    f"parada por mais de {IDLE_RESET_HOURS} horas e foi ENCERRADA por "
+                    "inatividade: você NÃO tem acesso ao que foi dito nem escolhido. "
+                    "Havia um agendamento começado que NÃO foi concluído. Na sua "
+                    "primeira resposta, avise com gentileza que o agendamento anterior "
+                    "não foi finalizado e que, como passou muito tempo, vamos "
+                    "recomeçar do início (nada do que foi escolhido foi guardado), e "
+                    "já pergunte o que ela deseja agendar. Se a mensagem dela for só "
+                    "'sim', 'pode ser' ou parecida, ela está respondendo a algo "
+                    "antigo: explique isso. Não invente detalhes do agendamento "
+                    "anterior.")
+        else:
+            sys += (f"\n\n[Contexto técnico] A conversa anterior ficou parada por mais "
+                    f"de {IDLE_RESET_HOURS} horas e foi encerrada por inatividade. "
+                    "Comece do zero, cumprimentando normalmente, sem supor nada do que "
+                    "foi dito antes.")
     contents = []
     for h in history:
         contents.append(types.Content(role=h["role"],
