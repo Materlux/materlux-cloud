@@ -94,8 +94,18 @@ def validar_cpf(cpf: str) -> dict:
                         "para a paciente conferir e enviar de novo.")}
 
 
+_MAX_SUGESTOES = 3  # a Malu só recebe poucos horários: a lista inteira do dia a
+                    # induzia a despejar tudo, contra a política de "um de cada vez"
+
+
+def _enxuga_dias(proximas: list, dias: int = 3, por_dia: int = 2) -> list:
+    """Dias alternativos só com os primeiros horários de cada dia (nunca a lista toda)."""
+    return [{"date": d["date"], "slots": d["slots"][:por_dia]} for d in proximas[:dias]]
+
+
 def consultar_horarios(professional_id: int, service_id: int, data_iso: str,
-                       nome_servico: str = "") -> dict:
+                       nome_servico: str = "", periodo: str = "",
+                       a_partir_de: str = "") -> dict:
     # mesma trava do criar_agendamento: o modelo já consultou horários com o
     # service_id de OUTRO serviço (ex.: consulta em vez de US) e ofereceu horários
     # que não existem para o serviço pedido. Id e nome têm que conferir.
@@ -123,8 +133,8 @@ def consultar_horarios(professional_id: int, service_id: int, data_iso: str,
             "duracao_min": scheduling.slot_minutes(professional_id, service_id)}
     if not scheduling.attends_on(professional_id, d):
         dias = scheduling.working_days_text(professional_id)
-        prox = scheduling.next_available_days(professional_id, service_id,
-                                              d + timedelta(days=1))
+        prox = _enxuga_dias(scheduling.next_available_days(
+            professional_id, service_id, d + timedelta(days=1)))
         return {**base, "horarios": [], "motivo": "profissional_nao_atende_neste_dia",
                 "dias_de_atendimento": dias, "proximas_datas": prox,
                 "detalhe": (f"A profissional NÃO atende neste dia da semana; ela atende "
@@ -132,8 +142,34 @@ def consultar_horarios(professional_id: int, service_id: int, data_iso: str,
                             "não está mais disponível e ofereça, um de cada vez, "
                             "horários de proximas_datas.")}
     if slots:
-        return {**base, "horarios": slots}
-    prox = scheduling.next_available_days(professional_id, service_id, d + timedelta(days=1))
+        # filtra pela preferência da paciente e devolve só algumas SUGESTÕES
+        filtrados = slots
+        per = (periodo or "").strip().lower()
+        if per.startswith("manh"):
+            filtrados = [h for h in slots if h < "12:00"]
+        elif per.startswith("tard"):
+            filtrados = [h for h in slots if h >= "12:00"]
+        ap = (a_partir_de or "").strip()
+        if len(ap) == 4 and ap[1] == ":":      # '9:00' -> '09:00'
+            ap = "0" + ap
+        if ap:
+            filtrados = [h for h in filtrados if h >= ap]
+        if filtrados:
+            return {**base, "horarios": filtrados[:_MAX_SUGESTOES],
+                    "total_livres": len(filtrados),
+                    "detalhe": ("Estes são só SUGESTÕES (os primeiros horários livres). "
+                                "Ofereça UM horário por vez e NUNCA liste todos. Se ela "
+                                "recusar, ofereça outro; se pedir outro período ou "
+                                "'a partir de' certa hora, consulte de novo com "
+                                "periodo ou a_partir_de.")}
+        return {**base, "horarios": [], "total_livres": 0,
+                "motivo": "sem_horario_na_preferencia",
+                "outros_horarios_no_dia": slots[:_MAX_SUGESTOES],
+                "detalhe": ("Não há horário livre na preferência pedida neste dia. "
+                            "Avise com gentileza e ofereça UM de outros_horarios_no_dia "
+                            "ou de outro dia.")}
+    prox = _enxuga_dias(scheduling.next_available_days(
+        professional_id, service_id, d + timedelta(days=1)))
     return {**base, "horarios": [], "proximas_datas": prox}
 
 
@@ -175,8 +211,8 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
         dias = scheduling.working_days_text(professional_id)
         return {"ok": False, "motivo": "profissional_nao_atende_neste_dia",
                 "dias_de_atendimento": dias,
-                "proximas_datas": scheduling.next_available_days(
-                    professional_id, service_id, start.date() + timedelta(days=1)),
+                "proximas_datas": _enxuga_dias(scheduling.next_available_days(
+                    professional_id, service_id, start.date() + timedelta(days=1))),
                 "detalhe": (f"A profissional NÃO atende neste dia da semana; ela atende "
                             f"às {dias}. Avise a paciente com gentileza que esse dia "
                             "não está mais disponível (o agendamento NÃO foi feito) e "
@@ -188,10 +224,10 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
             minuto_ok = int(hora.split(":")[1]) == ancora
         except (IndexError, ValueError):
             minuto_ok = False
-        extra = {"horarios_livres_no_dia": livres[:8]}
+        extra = {"horarios_livres_no_dia": livres[:_MAX_SUGESTOES]}
         if not livres:
-            extra["proximas_datas"] = scheduling.next_available_days(
-                professional_id, service_id, start.date() + timedelta(days=1))
+            extra["proximas_datas"] = _enxuga_dias(scheduling.next_available_days(
+                professional_id, service_id, start.date() + timedelta(days=1)))
         if not minuto_ok:
             return {"ok": False, "motivo": "horario_fora_do_padrao_do_servico", **extra,
                     "detalhe": (f"Esse serviço só tem horários terminando em :{ancora:02d}. "
@@ -537,6 +573,7 @@ def _log_tool(name: str, args: dict, result, sender_number: str):
             res = {k: result[k] for k in (
                 "ok", "motivo", "motivo_recusa", "diagnostico", "erro", "data", "quando",
                 "servico", "duracao_min", "horarios_livres_no_dia", "dias_de_atendimento",
+                "total_livres",
                 "ja_estava_cancelado") if k in result}
             if "horarios" in result:
                 hs = result["horarios"]
@@ -580,7 +617,15 @@ def _build_tools():
                     type="STRING",
                     description=("Nome do serviço EXATAMENTE como retornado por "
                                  "listar_servicos — é conferido contra o "
-                                 "service_id"))},
+                                 "service_id")),
+                "periodo": types.Schema(
+                    type="STRING",
+                    description=("Opcional: 'manha' ou 'tarde', conforme a preferência "
+                                 "da paciente")),
+                "a_partir_de": types.Schema(
+                    type="STRING",
+                    description=("Opcional: HH:MM — só horários a partir desta hora "
+                                 "(ex.: 'depois das 15h' -> '15:00')"))},
                 required=["professional_id", "service_id", "data_iso", "nome_servico"]),
         ),
         types.FunctionDeclaration(
@@ -653,7 +698,8 @@ _DISPATCH = {
     "listar_profissionais": lambda a, s: listar_profissionais(),
     "listar_servicos": lambda a, s: listar_servicos(a["professional_id"]),
     "consultar_horarios": lambda a, s: consultar_horarios(
-        a["professional_id"], a["service_id"], a["data_iso"], a.get("nome_servico", "")),
+        a["professional_id"], a["service_id"], a["data_iso"], a.get("nome_servico", ""),
+        a.get("periodo", ""), a.get("a_partir_de", "")),
     "criar_agendamento": lambda a, s: criar_agendamento(
         s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"],
         a["nome_paciente"], a.get("cpf", ""), a.get("nome_servico", "")),
