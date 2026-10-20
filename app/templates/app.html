@@ -57,6 +57,7 @@
   <button data-tab="cadastro" onclick="tab('cadastro')">Cadastro</button>
   <button data-tab="historico" onclick="tab('historico')">Histórico</button>
   <button data-tab="editar" onclick="tab('editar')">Editar agendamentos</button>
+  <button data-tab="bloqueios" onclick="tab('bloqueios')">Bloqueios</button>
   <button data-tab="cancelamentos" onclick="tab('cancelamentos')">Cancelamentos</button>
   <button data-tab="whats" onclick="tab('whats')">WhatsApp</button>
   <button data-tab="pront" onclick="tab('pront')">Prontuário</button>
@@ -206,6 +207,36 @@
     </div>
   </section>
 
+  <!-- BLOQUEIOS DE AGENDA -->
+  <section id="bloqueios" class="panel hide">
+    <h3>Bloqueio de agenda</h3>
+    <p class="muted">Bloqueie um dia inteiro ou um intervalo de horário. Enquanto estiver bloqueado,
+      a atendente virtual e a recepção <b>não oferecem</b> esses horários. Só é possível bloquear se a
+      agenda do período estiver <b>livre</b> — remarque antes as pacientes que já estiverem agendadas.</p>
+    <div class="row">
+      <div><label>Profissional</label><select id="bl-prof"></select></div>
+      <div><label>Data</label><input type="text" id="bl-date" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" oninput="maskDate(this)" style="width:110px"><button class="calbtn" onclick="openCal('bl-date')" title="Abrir calendário">📅</button></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label style="display:inline-flex;align-items:center;gap:6px;margin-right:18px">
+        <input type="radio" name="bl-tipo" value="dia" checked onchange="blTipo()"> Dia inteiro</label>
+      <label style="display:inline-flex;align-items:center;gap:6px">
+        <input type="radio" name="bl-tipo" value="intervalo" onchange="blTipo()"> Intervalo de horário</label>
+    </div>
+    <div class="row hide" id="bl-horas" style="margin-top:8px">
+      <div><label>Das</label><input type="time" id="bl-ini" step="900" value="08:00"></div>
+      <div><label>Até</label><input type="time" id="bl-fim" step="900" value="12:00"></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="act" onclick="blSalvar()">Bloquear agenda</button>
+      <span class="muted" id="bl-msg" style="max-width:640px"></span>
+    </div>
+    <h4 style="margin-top:22px">Bloqueios ativos</h4>
+    <table><thead><tr><th>Profissional</th><th>Data</th><th>Período</th><th></th></tr></thead>
+      <tbody id="bl-body"></tbody></table>
+    <p class="muted" id="bl-empty"></p>
+  </section>
+
   <!-- PARTOS -->
   <section id="partos" class="panel hide">
     <h3>Registro de partos</h3>
@@ -295,7 +326,8 @@ async function boot(){
   ['ag-prof','nv-prof','ed-prof'].forEach(s=>$(s).innerHTML=opts);
   $('cx-prof').innerHTML='<option value="">Todas</option>'+opts;
   $('pt-prof').innerHTML=opts;
-  ['ag-date','nv-date','ed-date'].forEach(s=>$(s).value=todayBr());
+  $('bl-prof').innerHTML=opts;
+  ['ag-date','nv-date','ed-date','bl-date'].forEach(s=>$(s).value=todayBr());
   $('rp-start').value=todayBr(); $('rp-end').value=todayBr();
   $('cx-start').value=todayBr(); $('cx-end').value=todayBr();
   $('pt-start').value=todayBr(); $('pt-end').value=todayBr();
@@ -305,8 +337,9 @@ async function boot(){
 }
 function tab(t){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
-  ['agenda','novo','cadastro','historico','editar','cancelamentos','whats','partos','pront','relatorios']
+  ['agenda','novo','cadastro','historico','editar','bloqueios','cancelamentos','whats','partos','pront','relatorios']
     .forEach(s=>$(s).classList.toggle('hide',s!==t));
+  if(t==='bloqueios')loadBloqueios();
   if(t==='whats'){loadWa();waAck();}
   if(t==='partos')loadPartos();
 }
@@ -715,6 +748,44 @@ async function ptDel(id){
   const r=await fetch('/api/partos/'+id,{method:'DELETE'});
   if(!r.ok)alert('Erro: '+(await r.json()).detail);
   loadPartos();
+}
+
+/* ---------- BLOQUEIOS DE AGENDA ---------- */
+function blTipo(){
+  const intervalo=document.querySelector('input[name="bl-tipo"]:checked').value==='intervalo';
+  $('bl-horas').classList.toggle('hide',!intervalo);
+}
+async function blSalvar(){
+  const m=$('bl-msg'); m.className='muted';
+  const dataIso=brToIso($('bl-date').value);
+  if(!dataIso){m.textContent='Data inválida — use dd/mm/aaaa ou o calendário.';m.className='muted err';return;}
+  const intervalo=document.querySelector('input[name="bl-tipo"]:checked').value==='intervalo';
+  const b={professional_id:+$('bl-prof').value,data:dataIso,dia_inteiro:!intervalo};
+  if(intervalo){
+    if(!$('bl-ini').value||!$('bl-fim').value){m.textContent='Informe a hora inicial e a final.';m.className='muted err';return;}
+    b.hora_inicio=$('bl-ini').value; b.hora_fim=$('bl-fim').value;
+  }
+  const nome=$('bl-prof').selectedOptions[0].textContent;
+  if(!confirm(`Bloquear a agenda de ${nome}\n${$('bl-date').value} — ${intervalo?b.hora_inicio+' às '+b.hora_fim:'dia inteiro'}?`))return;
+  const r=await fetch('/api/bloqueios',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  const j=await r.json().catch(()=>({}));
+  if(r.ok){m.textContent='✅ Agenda bloqueada: '+j.periodo;m.className='muted ok';loadBloqueios();}
+  else{m.textContent=(r.status===409?'⛔ ':'Erro: ')+(j.detail||'não foi possível bloquear.');m.className='muted err';}
+}
+async function loadBloqueios(){
+  const r=await fetch('/api/bloqueios');
+  if(!r.ok){$('bl-empty').textContent='Não foi possível carregar os bloqueios.';return;}
+  const rows=await r.json();
+  $('bl-empty').textContent=rows.length?'':'Nenhum bloqueio ativo.';
+  $('bl-body').innerHTML=rows.map(x=>`<tr><td>${x.profissional}</td>
+    <td>${x.data} <span class="muted">(${x.dia_semana})</span></td><td>${x.periodo}</td>
+    <td><button class="ghost" onclick="blExcluir(${x.id})">excluir</button></td></tr>`).join('');
+}
+async function blExcluir(id){
+  if(!confirm('Excluir este bloqueio? Os horários voltam a ficar disponíveis.'))return;
+  const r=await fetch('/api/bloqueios/'+id,{method:'DELETE'});
+  if(!r.ok)alert('Erro: '+((await r.json().catch(()=>({}))).detail||'não foi possível excluir.'));
+  loadBloqueios();
 }
 
 /* ---------- RELATORIOS ---------- */

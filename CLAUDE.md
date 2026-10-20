@@ -169,6 +169,11 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
 - **Partos** (`medical.partos`, migração 005): `POST/GET/PATCH/DELETE /api/partos` —
   registro com paciente, profissional, `valor_pago`, `data_pagamento`, `observacoes`.
   Aba própria no painel; partos sem `data_pagamento` aparecem em qualquer período.
+- **Bloqueios de agenda** (`app/routers/bloqueios.py`, tabela `medical.professional_timeoff`):
+  `GET/POST /api/bloqueios` e `DELETE /api/bloqueios/{id}`. Dia inteiro (00:00→00:00 do dia
+  seguinte) ou intervalo de horário, só datas avulsas, motivo opcional (fixo). **Recusa (409)
+  se houver agendamento ativo no período** — a recepção remarca antes. Já respeitado por
+  `scheduling.available_slots` (Malu, painel, criar/remarcar). Aba "Bloqueios" no painel.
 - `POST /tasks/lembretes` (**Cloud Scheduler**, protegido por header
   `X-Tasks-Token` = env `TASKS_TOKEN`; sem a env, responde 503): envia o lembrete
   da véspera via `send_reply` (Z-API) para consultas de amanhã com status ativo
@@ -189,8 +194,8 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
   (`bot`|`humano`). O bot pode se pausar via ferramenta `transferir_para_humano`;
   devolução automática ao bot após 12h (`_HANDOFF_HOURS` em `app/agent.py`).
 
-Frontend `app/templates/app.html` tem 10 abas: Agenda, Novo agendamento, Cadastro,
-Histórico, Editar agendamentos, Cancelamentos, WhatsApp (transbordo), Partos,
+Frontend `app/templates/app.html` tem 11 abas: Agenda, Novo agendamento, Cadastro,
+Histórico, Editar agendamentos, Bloqueios, Cancelamentos, WhatsApp (transbordo), Partos,
 Prontuário, Relatórios. (A aba "Atendente virtual" de teste foi removida na v2.)
 
 ---
