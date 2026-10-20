@@ -365,6 +365,21 @@ def set_atendimento_status(sender_number: str, status: str, por: str | None = No
         (status, datetime.now(TZ) if pausado else None,
          (por or None) if pausado else None, sender_number), commit=True,
     )
+    if pausado:
+        # com a recepção no comando não há agendamento "pendente" da Malu: sem isto o
+        # follow-up de 15 min dispararia quando a conversa voltasse ao bot
+        limpar_agendamento_pendente(sender_number)
+
+
+def assumido_por_humano(sender_number: str) -> bool:
+    """True se a RECEPÇÃO assumiu a conversa (painel). Não conta a autotransferência
+    da própria Malu (pausado_por='bot'): nesse caso a despedida dela deve ir."""
+    row = db.query(
+        "SELECT atendimento_status, pausado_por FROM conversations.sessions "
+        "WHERE sender_number = %s", (sender_number,), one=True,
+    )
+    return bool(row and row["atendimento_status"] == "humano"
+                and (row["pausado_por"] or "") != "bot")
 
 
 def log_paused_message(sender_number: str, text: str):

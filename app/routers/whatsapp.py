@@ -65,12 +65,25 @@ async def incoming(request: Request):
     phone, text = _extract(_s.WA_PROVIDER, payload)
     if not phone or not text:
         return {"status": "ignored"}
+    tel = f"..{str(phone)[-4:]}"
+    if payload.get("fromMe"):
+        # mensagem enviada PELA clínica (recepção/eco do próprio envio): nunca é da
+        # paciente, a Malu jamais responde a ela
+        print(f"[webhook] tel={tel} fromMe ignorado", flush=True)
+        return {"status": "ignored_from_me"}
     if agent.get_atendimento_status(phone) == "humano":
         # transbordo: recepção no comando — bot em silêncio absoluto,
         # só registra a mensagem para manter o contexto da conversa
+        print(f"[webhook] tel={tel} humano: Malu em silencio", flush=True)
         agent.log_paused_message(phone, text)
         return {"status": "humano"}
     reply = agent.process_message(phone, text)
+    # a recepção pode ter clicado em "assumir" enquanto a Malu gerava a resposta
+    if agent.assumido_por_humano(phone):
+        print(f"[webhook] tel={tel} recepcao assumiu durante a resposta: descartada",
+              flush=True)
+        return {"status": "humano"}
+    print(f"[webhook] tel={tel} bot respondeu", flush=True)
     send_reply(phone, reply)
     return {"status": "ok", "reply": reply}
 
