@@ -721,11 +721,23 @@ def process_message(sender_number: str, text: str) -> str:
     booking_touched = False   # consultou horários ou tentou criar nesta conversa
     booking_done = False      # criar_agendamento devolveu ok
     encerrou = False          # transbordo humano ou cancelamento concluído
+    vazias = 0                # respostas vazias/malformadas do Gemini nesta mensagem
     for _ in range(6):  # limita as rodadas de tool-calling
         resp = client.models.generate_content(
             model=_s.GEMINI_MODEL, contents=contents, config=cfg)
-        cand = resp.candidates[0]
-        calls = [p.function_call for p in cand.content.parts if p.function_call]
+        cands = resp.candidates or []
+        cand = cands[0] if cands else None
+        parts = cand.content.parts if (cand and cand.content and cand.content.parts) else None
+        if not parts:
+            # o Gemini às vezes devolve candidato sem conteúdo (ex.: chamada de
+            # ferramenta malformada); antes isto estourava e a Malu ficava muda
+            vazias += 1
+            print(f"[agent] resposta vazia do modelo (tentativa {vazias}) "
+                  f"finish_reason={getattr(cand, 'finish_reason', None)}", flush=True)
+            if vazias <= 2:
+                continue
+            break
+        calls = [p.function_call for p in parts if p.function_call]
         contents.append(cand.content)
         if not calls:
             final_text = resp.text or ""
@@ -761,6 +773,15 @@ def process_message(sender_number: str, text: str) -> str:
             tool_parts.append(types.Part(function_response=types.FunctionResponse(
                 name=fc.name, response={"result": result})))
         contents.append(types.Content(role="tool", parts=tool_parts))
+
+    if not final_text:
+        # sem resposta utilizável (Gemini vazio/malformado ou rodadas esgotadas): nunca
+        # deixa a paciente no vácuo nem grava texto vazio no histórico (o Gemini
+        # rejeita parte de texto vazia nas próximas mensagens)
+        print("[agent] sem resposta final do modelo: enviando mensagem de contingencia",
+              flush=True)
+        final_text = ("Desculpe, tive uma instabilidade aqui para consultar a agenda. "
+                      "Pode repetir a sua última mensagem para eu tentar de novo? 💙")
 
     history.append({"role": "user", "text": text})
     history.append({"role": "model", "text": final_text})

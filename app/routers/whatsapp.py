@@ -4,6 +4,7 @@
 - POST /webhook/whatsapp : recebe a mensagem, chama o agente e responde.
 - POST /api/simulate     : endpoint interno para testar o agente sem WhatsApp real.
 """
+import traceback
 import httpx
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Request, Query, Depends, HTTPException
@@ -77,7 +78,16 @@ async def incoming(request: Request):
         print(f"[webhook] tel={tel} humano: Malu em silencio", flush=True)
         agent.log_paused_message(phone, text)
         return {"status": "humano"}
-    reply = agent.process_message(phone, text)
+    try:
+        reply = agent.process_message(phone, text)
+    except Exception:  # noqa
+        # qualquer falha inesperada: registra o erro e avisa a paciente, em vez de
+        # estourar 500 e deixá-la sem resposta
+        traceback.print_exc()
+        print(f"[webhook] tel={tel} ERRO no agente: enviando mensagem de contingencia",
+              flush=True)
+        reply = ("Desculpe, tive uma instabilidade aqui. "
+                 "Pode repetir a sua última mensagem para eu tentar de novo? 💙")
     # a recepção pode ter clicado em "assumir" enquanto a Malu gerava a resposta
     if agent.assumido_por_humano(phone):
         print(f"[webhook] tel={tel} recepcao assumiu durante a resposta: descartada",
