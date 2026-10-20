@@ -94,13 +94,37 @@ def validar_cpf(cpf: str) -> dict:
                         "para a paciente conferir e enviar de novo.")}
 
 
-def consultar_horarios(professional_id: int, service_id: int, data_iso: str) -> dict:
+def consultar_horarios(professional_id: int, service_id: int, data_iso: str,
+                       nome_servico: str = "") -> dict:
+    # mesma trava do criar_agendamento: o modelo já consultou horários com o
+    # service_id de OUTRO serviço (ex.: consulta em vez de US) e ofereceu horários
+    # que não existem para o serviço pedido. Id e nome têm que conferir.
+    svc = db.query(
+        "SELECT s.name FROM medical.professional_services ps "
+        "JOIN medical.services s ON s.id = ps.service_id "
+        "WHERE ps.professional_id = %s AND ps.service_id = %s",
+        (professional_id, service_id), one=True,
+    )
+    if not svc:
+        return {"ok": False, "motivo": "servico_invalido",
+                "detalhe": ("Esse service_id não pertence a essa profissional. Chame "
+                            "listar_servicos dela e use exatamente o service_id "
+                            "retornado.")}
+    if not _servico_confere(nome_servico, svc["name"]):
+        return {"ok": False, "motivo": "servico_nao_confere",
+                "detalhe": (f"O service_id {service_id} corresponde a '{svc['name']}', "
+                            f"não a '{nome_servico or '(vazio)'}'. Localize em "
+                            "listar_servicos o id do serviço que a paciente pediu e "
+                            "chame consultar_horarios de novo AGORA. Não ofereça "
+                            "horários antes disso.")}
     d = date.fromisoformat(data_iso)
     slots = scheduling.available_slots(professional_id, service_id, d)
+    base = {"data": data_iso, "servico": svc["name"],
+            "duracao_min": scheduling.slot_minutes(professional_id, service_id)}
     if slots:
-        return {"data": data_iso, "horarios": slots}
+        return {**base, "horarios": slots}
     prox = scheduling.next_available_days(professional_id, service_id, d + timedelta(days=1))
-    return {"data": data_iso, "horarios": [], "proximas_datas": prox}
+    return {**base, "horarios": [], "proximas_datas": prox}
 
 
 def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
@@ -137,8 +161,28 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
                             "AGORA, nesta mesma resposta.")}
     start = datetime.fromisoformat(f"{data_iso}T{hora}:00").replace(tzinfo=TZ)
     # revalida que o horário ainda está livre (evita corrida)
-    if hora not in scheduling.available_slots(professional_id, service_id, start.date()):
-        return {"ok": False, "motivo": "horario_indisponivel"}
+    livres = scheduling.available_slots(professional_id, service_id, start.date())
+    if hora not in livres:
+        _, ancora = scheduling.slot_rule(professional_id, service_id)
+        try:
+            minuto_ok = int(hora.split(":")[1]) == ancora
+        except (IndexError, ValueError):
+            minuto_ok = False
+        extra = {"horarios_livres_no_dia": livres[:8]}
+        if not livres:
+            extra["proximas_datas"] = scheduling.next_available_days(
+                professional_id, service_id, start.date() + timedelta(days=1))
+        if not minuto_ok:
+            return {"ok": False, "motivo": "horario_fora_do_padrao_do_servico", **extra,
+                    "detalhe": (f"Esse serviço só tem horários terminando em :{ancora:02d}. "
+                                f"O horário {hora} NÃO existe para ele — NÃO diga que "
+                                "foi preenchido. Chame consultar_horarios com o "
+                                "service_id e nome corretos e ofereça só os horários "
+                                "que ela devolver.")}
+        return {"ok": False, "motivo": "horario_indisponivel", **extra,
+                "detalhe": ("Esse horário está ocupado ou fora da agenda. Peça "
+                            "desculpas e ofereça, um de cada vez, os horários reais "
+                            "de horarios_livres_no_dia (ou proximas_datas).")}
     end = start + timedelta(minutes=scheduling.slot_minutes(professional_id, service_id))
 
     patient_id = _get_or_create_patient(sender_number, nome_paciente, cpf_digits)
@@ -472,6 +516,7 @@ def _log_tool(name: str, args: dict, result, sender_number: str):
         if isinstance(result, dict):
             res = {k: result[k] for k in (
                 "ok", "motivo", "motivo_recusa", "diagnostico", "erro", "data", "quando",
+                "servico", "duracao_min", "horarios_livres_no_dia",
                 "ja_estava_cancelado") if k in result}
             if "horarios" in result:
                 hs = result["horarios"]
@@ -510,8 +555,13 @@ def _build_tools():
             parameters=types.Schema(type="OBJECT", properties={
                 "professional_id": types.Schema(type="INTEGER"),
                 "service_id": types.Schema(type="INTEGER"),
-                "data_iso": types.Schema(type="STRING")},
-                required=["professional_id", "service_id", "data_iso"]),
+                "data_iso": types.Schema(type="STRING"),
+                "nome_servico": types.Schema(
+                    type="STRING",
+                    description=("Nome do serviço EXATAMENTE como retornado por "
+                                 "listar_servicos — é conferido contra o "
+                                 "service_id"))},
+                required=["professional_id", "service_id", "data_iso", "nome_servico"]),
         ),
         types.FunctionDeclaration(
             name="criar_agendamento",
@@ -583,7 +633,7 @@ _DISPATCH = {
     "listar_profissionais": lambda a, s: listar_profissionais(),
     "listar_servicos": lambda a, s: listar_servicos(a["professional_id"]),
     "consultar_horarios": lambda a, s: consultar_horarios(
-        a["professional_id"], a["service_id"], a["data_iso"]),
+        a["professional_id"], a["service_id"], a["data_iso"], a.get("nome_servico", "")),
     "criar_agendamento": lambda a, s: criar_agendamento(
         s, a["professional_id"], a["service_id"], a["data_iso"], a["hora"],
         a["nome_paciente"], a.get("cpf", ""), a.get("nome_servico", "")),
