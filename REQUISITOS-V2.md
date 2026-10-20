@@ -10,7 +10,8 @@ continue em outra tarefa. Data: 2026-07-05._
 - **Banco:** Cloud SQL PostgreSQL `materlux-db` (banco `materlux`), backup diário 03:00 BRT.
 - **Profissionais (bookáveis):** Dr. Murilo Ferraz = **id 1**; Dra. Isadora Vencioneck = **id 4**.
 - **Grade (medical.professional_schedules), dow no padrão Postgres (dom=0):**
-  - Murilo: seg(1), qua(3), sex(5) — 08:00–19:00.
+  - Murilo: ter(2), qua(3), sex(5) — 08:00–19:00 (desde 27/10/2026; antes era seg(1),
+    qua(3), sex(5) — migração 009).
   - Isadora: ter(2) 14:00–18:00; qua(3) 08:00–13:00; qui(4) 13:00–18:00.
 - **Serviços (medical.services) por profissional (medical.professional_services):**
   - Murilo (1): 1 Pré-Natal, 2 Pré-Natal On, 3 Infertilidade, 4 Infertilidade On,

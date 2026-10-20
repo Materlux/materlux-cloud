@@ -25,6 +25,33 @@ def _pg_dow(d: date) -> int:
     return (d.weekday() + 1) % 7  # Monday=0(py) -> 1 ; Sunday=6 -> 0
 
 
+_DIAS_PLURAL = ["domingos", "segundas", "terças", "quartas", "quintas", "sextas",
+                "sábados"]  # índice = DOW do Postgres (domingo = 0)
+
+
+def attends_on(professional_id: int, target: date) -> bool:
+    """O profissional tem grade de atendimento neste dia da semana?"""
+    row = db.query(
+        "SELECT 1 FROM medical.professional_schedules "
+        "WHERE professional_id = %s AND day_of_week = %s LIMIT 1",
+        (professional_id, _pg_dow(target)), one=True,
+    )
+    return bool(row)
+
+
+def working_days_text(professional_id: int) -> str:
+    """Ex.: 'terças, quartas e sextas' — lido da grade, nunca fixo no código."""
+    rows = db.query(
+        "SELECT DISTINCT day_of_week FROM medical.professional_schedules "
+        "WHERE professional_id = %s", (professional_id,),
+    ) or []
+    dias = sorted((int(r["day_of_week"]) for r in rows), key=lambda d: (d + 6) % 7)
+    nomes = [_DIAS_PLURAL[d] for d in dias]
+    if len(nomes) <= 1:
+        return "".join(nomes)
+    return ", ".join(nomes[:-1]) + " e " + nomes[-1]
+
+
 def professional_name(professional_id: int) -> str | None:
     row = db.query(
         "SELECT title, full_name FROM medical.professionals WHERE id = %s",

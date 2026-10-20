@@ -121,6 +121,16 @@ def consultar_horarios(professional_id: int, service_id: int, data_iso: str,
     slots = scheduling.available_slots(professional_id, service_id, d)
     base = {"data": data_iso, "servico": svc["name"],
             "duracao_min": scheduling.slot_minutes(professional_id, service_id)}
+    if not scheduling.attends_on(professional_id, d):
+        dias = scheduling.working_days_text(professional_id)
+        prox = scheduling.next_available_days(professional_id, service_id,
+                                              d + timedelta(days=1))
+        return {**base, "horarios": [], "motivo": "profissional_nao_atende_neste_dia",
+                "dias_de_atendimento": dias, "proximas_datas": prox,
+                "detalhe": (f"A profissional NÃO atende neste dia da semana; ela atende "
+                            f"às {dias}. Avise a paciente com gentileza que esse dia "
+                            "não está mais disponível e ofereça, um de cada vez, "
+                            "horários de proximas_datas.")}
     if slots:
         return {**base, "horarios": slots}
     prox = scheduling.next_available_days(professional_id, service_id, d + timedelta(days=1))
@@ -161,6 +171,16 @@ def criar_agendamento(sender_number: str, professional_id: int, service_id: int,
                             "AGORA, nesta mesma resposta.")}
     start = datetime.fromisoformat(f"{data_iso}T{hora}:00").replace(tzinfo=TZ)
     # revalida que o horário ainda está livre (evita corrida)
+    if not scheduling.attends_on(professional_id, start.date()):
+        dias = scheduling.working_days_text(professional_id)
+        return {"ok": False, "motivo": "profissional_nao_atende_neste_dia",
+                "dias_de_atendimento": dias,
+                "proximas_datas": scheduling.next_available_days(
+                    professional_id, service_id, start.date() + timedelta(days=1)),
+                "detalhe": (f"A profissional NÃO atende neste dia da semana; ela atende "
+                            f"às {dias}. Avise a paciente com gentileza que esse dia "
+                            "não está mais disponível (o agendamento NÃO foi feito) e "
+                            "ofereça, um de cada vez, horários de proximas_datas.")}
     livres = scheduling.available_slots(professional_id, service_id, start.date())
     if hora not in livres:
         _, ancora = scheduling.slot_rule(professional_id, service_id)
@@ -516,7 +536,7 @@ def _log_tool(name: str, args: dict, result, sender_number: str):
         if isinstance(result, dict):
             res = {k: result[k] for k in (
                 "ok", "motivo", "motivo_recusa", "diagnostico", "erro", "data", "quando",
-                "servico", "duracao_min", "horarios_livres_no_dia",
+                "servico", "duracao_min", "horarios_livres_no_dia", "dias_de_atendimento",
                 "ja_estava_cancelado") if k in result}
             if "horarios" in result:
                 hs = result["horarios"]

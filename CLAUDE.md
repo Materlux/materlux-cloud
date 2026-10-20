@@ -84,6 +84,10 @@ Schemas: `medical`, `patients`, `conversations` (entre outros).
   atendente virtual pode agendar vem de `BOOKABLE_PROFESSIONAL_IDS` (hoje `1,4,12`,
   definido no `deploy.sh`).
 - **`medical.professional_schedules.day_of_week`** usa o **DOW do Postgres** (Domingo = 0).
+  **Dr. Murilo atende terças, quartas e sextas** (08:00–19:00) desde 27/10/2026 — antes
+  eram segundas (migração 009). Agendamentos antigos de segunda foram remarcados à mão;
+  a Malu responde `profissional_nao_atende_neste_dia` para datas fora da grade
+  (`scheduling.attends_on` / `working_days_text`, lidos da grade — nada fixo no código).
 - **`medical.appointment_statuses`:** 1=`pending_payment`, 2=`confirmed`,
   3=`cancelled_by_patient`, 4=`cancelled_by_clinic`, 5=`expired`, 6=`attended`, 7=`no_show`.
 - **`medical.services.service_type_id`:** 1=consulta, 3=ultrassom, 4=retorno.
@@ -236,7 +240,7 @@ app/
     patients.py       # busca, cadastro, histórico
     partos.py         # registro de partos (valor/data de pagamento → relatórios)
     tasks.py          # tarefas do Cloud Scheduler (lembrete de 24h via Z-API)
-migrations/           # 001-006, 008 (007 era fertilidade→repo próprio; 008=followup)
+migrations/           # 001-006, 008, 009 (007 era fertilidade→repo próprio; 008=followup; 009=Murilo terças)
 deploy.sh             # crane push + gcloud run deploy
 REQUISITOS-V2.md      # especificação da v2
 V2-STATUS.md          # checklist de publicação da v2
