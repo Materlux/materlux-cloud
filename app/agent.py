@@ -590,6 +590,26 @@ def _log_tool(name: str, args: dict, result, sender_number: str):
         print(f"[agent] tool={name} (falha ao logar: {e})", flush=True)
 
 
+# horários citados no texto: '14:00' ou 'às 14h' / 'às 14h30'
+_HORA_RE = re.compile(
+    r"(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?![\d:])|"
+    r"às\s+([01]?\d|2[0-3])\s*h(?:\s*([0-5]\d))?\b", re.IGNORECASE)
+
+
+def _horas_em(texto: str) -> set[str]:
+    """Horários 'HH:MM' citados num texto (para conferir se vieram da agenda)."""
+    out = set()
+    for m in _HORA_RE.finditer(texto or ""):
+        h, mi = (m.group(1), m.group(2)) if m.group(1) is not None \
+            else (m.group(3), m.group(4) or "00")
+        out.add(f"{int(h):02d}:{mi}")
+    return out
+
+
+_MSG_HORARIO_SEGURA = ("Deixa eu conferir a agenda certinho para não te passar um "
+                       "horário errado. Você prefere de manhã ou à tarde nesse dia? 💙")
+
+
 def _build_tools():
     from google.genai import types
     return [types.Tool(function_declarations=[
@@ -788,6 +808,13 @@ def process_message(sender_number: str, text: str) -> str:
     booking_done = False      # criar_agendamento devolveu ok
     encerrou = False          # transbordo humano ou cancelamento concluído
     vazias = 0                # respostas vazias/malformadas do Gemini nesta mensagem
+    # horários que a Malu PODE citar: os que vieram de ferramentas nesta resposta, os que a
+    # própria paciente escreveu, os da última mensagem da Malu e os da política (ex.: horário
+    # de ligações). Qualquer outro horário citado foi inventado de memória.
+    ultimo_modelo = next((h["text"] for h in reversed(history)
+                          if h.get("role") == "model"), "")
+    horas_ok = _horas_em(text) | _horas_em(ultimo_modelo) | _horas_em(sys)
+    nudged_hora = False
     for _ in range(6):  # limita as rodadas de tool-calling
         resp = client.models.generate_content(
             model=_s.GEMINI_MODEL, contents=contents, config=cfg)
@@ -807,6 +834,25 @@ def process_message(sender_number: str, text: str) -> str:
         contents.append(cand.content)
         if not calls:
             final_text = resp.text or ""
+            sem_origem = _horas_em(final_text) - horas_ok
+            if sem_origem:
+                # a Malu citou um horário que NENHUMA consulta à agenda devolveu (ex.:
+                # respondeu "14:00" de memória quando o horário real era 14:45)
+                print(f"[agent] tel=..{sender_number[-4:]} horario sem origem na "
+                      f"agenda: {sorted(sem_origem)}", flush=True)
+                if not nudged_hora:
+                    nudged_hora = True
+                    contents.append(types.Content(role="user", parts=[types.Part(text=(
+                        "[sistema] Sua resposta citou horário(s) "
+                        f"{', '.join(sorted(sem_origem))} que NÃO vieram de uma consulta "
+                        "à agenda nesta resposta. Não cite horário de memória. Chame "
+                        "consultar_horarios AGORA (use periodo ou a_partir_de se a "
+                        "paciente pediu 'mais tarde', 'próxima data', 'último horário' "
+                        "etc.) e responda usando SÓ o que a ferramenta devolver, "
+                        "oferecendo um horário por vez."))]))
+                    continue
+                final_text = _MSG_HORARIO_SEGURA   # insistiu: não deixa o erro chegar à paciente
+                break
             if not nudged and _PROMESSA.search(final_text):
                 # resposta de espera/pensamento sem conteúdo: devolve a bola uma vez
                 nudged = True
@@ -828,6 +874,7 @@ def process_message(sender_number: str, text: str) -> str:
             except Exception as e:  # noqa
                 result = {"erro": str(e)}
             _log_tool(fc.name, args, result, sender_number)
+            horas_ok |= _horas_em(json.dumps(result, default=str, ensure_ascii=False))
             _ok = isinstance(result, dict) and result.get("ok")
             if fc.name in ("consultar_horarios", "criar_agendamento"):
                 booking_touched = True
