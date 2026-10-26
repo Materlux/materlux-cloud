@@ -485,7 +485,8 @@ async function nvSave(){
     b.cpf=$('nv-cpf').value; b.phone=$('nv-fone').value;
   }
   const r=await fetch('/api/appointments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-  $('nv-msg').textContent=r.ok?'✅ Agendado com sucesso!':'Erro: '+(await r.json()).detail;
+  const j=await r.json().catch(()=>({}));
+  $('nv-msg').textContent=r.ok?('✅ Agendado com sucesso!'+(j.aviso?'\n⚠️ '+j.aviso:'')):'Erro: '+(j.detail||'não foi possível agendar.');
   if(r.ok){$('nv-nome').value=$('nv-cpf').value=$('nv-fone').value='';nvClear();$('nv-busca').value='';nvSlots();}
 }
 

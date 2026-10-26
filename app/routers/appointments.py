@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from ..security import current_user
 from ..config import get_settings
 from .. import db, scheduling
+from ..validators import tel_key, tel_key_sql
 
 router = APIRouter()
 _s = get_settings()
@@ -119,8 +120,22 @@ def _start_end(professional_id, service_id, data, hora):
     return start, end
 
 
+def _tem_telefone(patient_id: int) -> bool:
+    """A paciente tem pelo menos um telefone utilizável (10+ dígitos) no cadastro?"""
+    return bool(db.query(
+        "SELECT 1 FROM patients.contacts c WHERE c.patient_id = %s "
+        "AND length(regexp_replace(c.phone_number, '\\D', '', 'g')) >= 10 LIMIT 1",
+        (patient_id,), one=True))
+
+
 @router.post("/api/appointments")
 def create_appointment(body: NewAppointment, user: dict = Depends(current_user)):
+    tel = "".join(c for c in (body.phone or "") if c.isdigit())
+    if not body.patient_id and len(tel) < 10:
+        # sem telefone a paciente não é encontrada pela atendente virtual nem recebe
+        # o lembrete de véspera
+        raise HTTPException(status_code=400,
+                            detail="Informe o telefone da paciente, com DDD.")
     if body.hora not in scheduling.available_slots(
             body.professional_id, body.service_id, date.fromisoformat(body.data)):
         raise HTTPException(status_code=409, detail="Horário indisponível")
@@ -137,6 +152,14 @@ def create_appointment(body: NewAppointment, user: dict = Depends(current_user))
             one=True, commit=True,
         )
         patient_id = pat["id"]
+        # grava o telefone (antes era ignorado) se a ficha ainda não tiver esse número
+        db.query(
+            "INSERT INTO patients.contacts (patient_id, phone_number, is_primary) "
+            "SELECT %s, %s, NOT EXISTS (SELECT 1 FROM patients.contacts WHERE patient_id = %s) "
+            "WHERE NOT EXISTS (SELECT 1 FROM patients.contacts c WHERE c.patient_id = %s "
+            f"AND {tel_key_sql('c.phone_number')} = %s)",
+            (patient_id, tel, patient_id, patient_id, tel_key(tel)), commit=True,
+        )
 
     row = db.query(
         "INSERT INTO medical.appointments "
@@ -145,7 +168,12 @@ def create_appointment(body: NewAppointment, user: dict = Depends(current_user))
         (body.professional_id, patient_id, body.service_id, start, end),
         one=True, commit=True,
     )
-    return {"ok": True, "appointment_id": row["id"]}
+    out = {"ok": True, "appointment_id": row["id"]}
+    if not _tem_telefone(patient_id):
+        out["aviso"] = ("A paciente está SEM telefone cadastrado: a atendente virtual não "
+                        "a encontra e o lembrete de véspera não é enviado. Preencha o "
+                        "telefone na aba Cadastro.")
+    return out
 
 
 @router.get("/api/appointments/{appointment_id}")

@@ -13,7 +13,9 @@ from pathlib import Path
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from .config import get_settings
-from .validators import valida_cpf as _valida_cpf
+from .validators import valida_cpf as _valida_cpf, tel_key as _tel_key, tel_key_sql
+
+_TEL_C = tel_key_sql("c.phone_number")   # telefone do contato, comparável ao do WhatsApp
 from . import db, scheduling
 
 _s = get_settings()
@@ -268,9 +270,9 @@ def listar_agendamentos_futuros(sender_number: str) -> list[dict]:
         "JOIN patients.contacts c ON c.patient_id = p.id "
         "JOIN medical.professionals pr ON pr.id = a.professional_id "
         "LEFT JOIN medical.services s ON s.id = a.service_id "
-        "WHERE c.phone_number = %s AND a.status_id = ANY(%s) "
+        f"WHERE {_TEL_C} = %s AND a.status_id = ANY(%s) "
         "AND a.start_time > now() ORDER BY a.start_time",
-        (sender_number, [1, 2]),
+        (_tel_key(sender_number), [1, 2]),
     )
     return [{
         "appointment_id": r["id"],
@@ -279,6 +281,22 @@ def listar_agendamentos_futuros(sender_number: str) -> list[dict]:
         "profissional": f"{(r['title'] or '').strip()} {r['full_name']}".strip(),
         "paciente": f"{r['first_name']} {r['last_name']}".strip(),
     } for r in rows]
+
+
+def _listar_para_agente(sender_number: str):
+    """Lista os agendamentos; se não achar nenhum, orienta a Malu a NÃO afirmar que a
+    paciente não tem agendamento (o cadastro pode estar com outro número)."""
+    ags = listar_agendamentos_futuros(sender_number)
+    if ags:
+        return ags
+    return {"agendamentos": [],
+            "detalhe": ("Nenhum agendamento ativo foi encontrado para ESTE número de "
+                        "WhatsApp. Isso NÃO prova que a paciente não tenha agendamento: "
+                        "ele pode estar cadastrado com outro telefone. Não diga que ela "
+                        "não tem. Diga com gentileza que não localizou neste número, "
+                        "pergunte se foi marcado em nome de outra pessoa ou com outro "
+                        "número e, se ela confirmar que tem agendamento, chame "
+                        "transferir_para_humano para a recepção localizar.")}
 
 
 def cancelar_agendamento(sender_number: str, appointment_id: int, motivo: str) -> dict:
@@ -292,8 +310,8 @@ def cancelar_agendamento(sender_number: str, appointment_id: int, motivo: str) -
     r = db.query(
         "SELECT a.id, a.start_time, a.status_id FROM medical.appointments a "
         "JOIN patients.contacts c ON c.patient_id = a.patient_id "
-        "WHERE a.id = %s AND c.phone_number = %s",
-        (appointment_id, sender_number), one=True,
+        f"WHERE a.id = %s AND {_TEL_C} = %s",
+        (appointment_id, _tel_key(sender_number)), one=True,
     )
     if not r:
         return {"ok": False, "motivo_recusa": "agendamento_nao_encontrado",
@@ -361,8 +379,8 @@ def _get_or_create_patient(sender_number: str, nome: str, cpf: str) -> int:
     )
     existentes = db.query(
         "SELECT p.id, p.first_name, p.last_name, p.cpf FROM patients.contacts c "
-        "JOIN patients.records p ON p.id = c.patient_id WHERE c.phone_number = %s",
-        (sender_number,),
+        f"JOIN patients.records p ON p.id = c.patient_id WHERE {_TEL_C} = %s",
+        (_tel_key(sender_number),),
     )
     if achado:
         # garante que este telefone fique vinculado à ficha encontrada
@@ -725,7 +743,7 @@ _DISPATCH = {
         a["nome_paciente"], a.get("cpf", ""), a.get("nome_servico", "")),
     "validar_cpf": lambda a, s: validar_cpf(a.get("cpf", "")),
     "transferir_para_humano": lambda a, s: transferir_para_humano(s),
-    "listar_agendamentos_futuros": lambda a, s: listar_agendamentos_futuros(s),
+    "listar_agendamentos_futuros": lambda a, s: _listar_para_agente(s),
     "cancelar_agendamento": lambda a, s: cancelar_agendamento(
         s, a["appointment_id"], a.get("motivo", "")),
 }

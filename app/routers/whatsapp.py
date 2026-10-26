@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from ..config import get_settings
 from ..security import current_user
 from .. import agent, db
+from ..validators import tel_key, tel_key_sql
 
 router = APIRouter()
 _s = get_settings()
@@ -118,7 +119,7 @@ def wa_conversas(user: dict = Depends(current_user)):
         nomes = db.query(
             "SELECT DISTINCT p.first_name || ' ' || p.last_name AS nome "
             "FROM patients.contacts c JOIN patients.records p ON p.id = c.patient_id "
-            "WHERE c.phone_number = %s", (r["sender_number"],),
+            f"WHERE {tel_key_sql('c.phone_number')} = %s", (tel_key(r["sender_number"]),),
         )
         out.append({
             "numero": r["sender_number"],
